@@ -1,0 +1,21 @@
+
+rtib_tmp
+**/build
+**/desktop.ini
+/results
+/test
+/docker_scripts
+/kernels/dispositions
+core
+.idea
+home
+nohup.out
+# VSCode related
+*.code-workspace
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+
+# C extensions
+*.so

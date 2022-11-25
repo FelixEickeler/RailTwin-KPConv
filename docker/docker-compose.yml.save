@@ -1,0 +1,30 @@
+docker image prune -a --filter "until=$(date +'%Y-%m-%dT%H:%M:%S' --date='--7 days')"version: "2.3"
+services:
+  kpconv:
+    build:
+      context: .
+      dockerfile: kpconv.Dockerfile
+    container_name: railtwin_kpconv
+    runtime: nvidia
+    stdin_open: true
+    shm_size: "128gb"
+    volumes:
+      - ${SRC}:/home/point_warrior/dataset
+      - ${DST}:/home/point_warrior/workdir
+      -  ..:/home/point_warrior/railtwin_kpconv
+    environment:
+      - LOCAL_UID=${UUID}
+      - LOCAL_GID=${GID}
+      - DISPLAY=$DISPLAY
+      - NVIDIA_VISIBLE_DEVICES=all
+    ports:
+      - "2244:22"
+      - "6667:6006"
+    entrypoint: /usr/local/bin/kpconv-entrypoint.sh
+
+
+volumes:
+  name:
+    driver: local
+
+

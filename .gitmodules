@@ -1,0 +1,3 @@
+[submodule "railtwin_common"]
+	path = railtwin_common
+	url = https://github.com/FelixEickeler/RailTwin-Common.git
