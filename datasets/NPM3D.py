@@ -313,11 +313,13 @@ class NPM3DDataset(PointCloudDataset):
                 pot_points = np.array(self.pot_trees[cloud_ind].data, copy=False)
 
                 # Center point of input region
-                center_point = pot_points[point_ind, :].reshape(1, -1)
+                center_point = np.copy(pot_points[point_ind, :].reshape(1, -1))
 
                 # Add a small noise to center point
                 if self.set != 'ERF':
-                    center_point += np.random.normal(scale=self.config.in_radius / 10, size=center_point.shape)
+                    center_point += np.clip(np.random.normal(scale=self.config.in_radius / 10, size=center_point.shape),
+                                            -self.config.in_radius / 2,
+                                            self.config.in_radius / 2)
 
                 # Indices of points in input region
                 pot_inds, dists = self.pot_trees[cloud_ind].query_radius(center_point,
@@ -543,11 +545,13 @@ class NPM3DDataset(PointCloudDataset):
             points = np.array(self.input_trees[cloud_ind].data, copy=False)
 
             # Center point of input region
-            center_point = points[point_ind, :].reshape(1, -1)
+            center_point = np.copy(points[point_ind, :].reshape(1, -1))
 
             # Add a small noise to center point
             if self.set != 'ERF':
-                center_point += np.random.normal(scale=self.config.in_radius / 10, size=center_point.shape)
+                center_point += np.clip(np.random.normal(scale=self.config.in_radius / 10, size=center_point.shape),
+                                        -self.config.in_radius / 2,
+                                        self.config.in_radius / 2)
 
             # Indices of points in input region
             input_inds = self.input_trees[cloud_ind].query_radius(center_point,
@@ -580,7 +584,7 @@ class NPM3DDataset(PointCloudDataset):
             #   input_colors *= 0
 
             # Get original height as additional feature
-            input_features = np.hstack((input_colors, input_points[:, 2:] + center_point[:, 2:])).astype(np.float32)
+            input_features = np.hstack((input_points[:, 2:] + center_point[:, 2:])).astype(np.float32)
 
             # Stack batch
             p_list += [input_points]
