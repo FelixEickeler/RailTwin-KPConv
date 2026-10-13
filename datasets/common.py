@@ -32,6 +32,7 @@ from utils.mayavi_visu import *
 from kernels.kernel_points import create_3D_rotations
 from datasets.rotations import random_rotation
 from datasets.features import LEGACY_FEATURES, select_features, stack_features
+from datasets.mixing import mix_spheres
 from utils.als_simulation import als_augmentation, prepare_als_versions, prepared_als_mask, prepared_als_settings
 
 # Subsampling extension
@@ -247,6 +248,20 @@ class PointCloudDataset(Dataset):
         self.label_names = [self.label_to_names[k] for k in self.label_values]
         self.label_to_idx = {l: i for i, l in enumerate(self.label_values)}
         self.name_to_label = {v: k for k, v in self.label_to_names.items()}
+
+    def mix3d(self, p_list, f_list, l_list, i_list, pi_list, ci_list, s_list, R_list):
+        """
+        Mix3D augmentation (datasets/mixing.py): with probability config.augment_mix3d, pairs of training spheres of a
+        batch are overlaid into one sample. Only for training, and paused while the batch sizes are calibrated
+        (self.calibrating), because the calibration counts spheres per batch.
+        """
+        prob = getattr(self.config, 'augment_mix3d', 0.0) or 0.0
+        lists = (p_list, f_list, l_list, i_list, pi_list, ci_list, s_list, R_list)
+        if prob <= 0 or getattr(self, 'set', None) != 'training' or getattr(self, 'calibrating', False):
+            return lists
+        keys = ('points', 'features', 'labels', 'point_inds', 'input_inds', 'cloud_inds', 'scales', 'rots')
+        merged = mix_spheres(dict(zip(keys, lists)), prob)
+        return tuple(merged[key] for key in keys)
 
     def point_features(self, colors, input_points, center_point, names=('above_ground', 'intensity')):
         """

@@ -152,7 +152,10 @@ def train_railtwin(working_path, previous_training_path=Path(''), fine_tune=Fals
 
     # Calibrate samplers
     untouched_ratio = config.untouched_ratio
+    # No Mix3D while calibrating: the calibration counts spheres per batch
+    training_dataset.calibrating = True
     training_sampler.calibration(training_loader, untouched_ratio=untouched_ratio, verbose=True)
+    training_dataset.calibrating = False
     test_sampler.calibration(test_loader, untouched_ratio=untouched_ratio, verbose=True)
 
     # Optional debug functions

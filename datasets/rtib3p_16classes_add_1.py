@@ -231,7 +231,8 @@ class RTIB3p(PointCloudDataset):
         self.initalize_potentials(self.use_potentials)
 
         # expected_N
-        self.config.expected_N = 541333  # resulted in 1478032 influenced by batchsize #
+        # Tuned for 8.9 m spheres (resulted in 1478032 influenced by batchsize); points per sphere scale with r^2
+        self.config.expected_N = int(541333 * (self.config.in_radius / 8.9) ** 2)
 
         return
 
@@ -455,6 +456,10 @@ class RTIB3p(PointCloudDataset):
             #    input_inds = np.random.choice(input_inds, size=int(self.batch_limit) - 1, replace=False)
             #    n = input_inds.shape[0]
 
+        # Mix3D: overlay pairs of training spheres (config.augment_mix3d, datasets/mixing.py)
+        p_list, f_list, l_list, i_list, pi_list, ci_list, s_list, R_list = self.mix3d(
+            p_list, f_list, l_list, i_list, pi_list, ci_list, s_list, R_list)
+
         ###################
         # Concatenate batch
         ###################
@@ -649,6 +654,10 @@ class RTIB3p(PointCloudDataset):
             # if n > int(self.batch_limit):
             #    input_inds = np.random.choice(input_inds, size=int(self.batch_limit) - 1, replace=False)
             #    n = input_inds.shape[0]
+
+        # Mix3D: overlay pairs of training spheres (config.augment_mix3d, datasets/mixing.py)
+        p_list, f_list, l_list, i_list, pi_list, ci_list, s_list, R_list = self.mix3d(
+            p_list, f_list, l_list, i_list, pi_list, ci_list, s_list, R_list)
 
         ###################
         # Concatenate batch

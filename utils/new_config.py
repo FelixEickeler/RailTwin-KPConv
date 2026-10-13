@@ -87,8 +87,8 @@ class Config:
     saving_path = None
 
     version = 2.0
-    pot_sample_mult: 50
-    tukey_update_crop: 0.7
+    pot_sample_mult = 50
+    tukey_update_crop = 0.7
     untouched_ratio = 0.9
 
 
@@ -216,9 +216,21 @@ class Config:
         target = Path(self.saving_path)
         if not target.is_dir():
             target = target.parent
-        with open(target / 'parameters.json', "w") as file:
-            dat = OrderedDict({key:value for key, value in self.__class__.__dict__.items()})
+        # Class attributes (the configuration) plus instance attributes set at runtime, e.g. labels, ignored_labels
+        # and num_classes set by the dataset, which the prediction needs. Values that JSON cannot store are skipped.
+        dat = OrderedDict()
+        for source in (self.__class__.__dict__, self.__dict__):
+            for key, value in source.items():
+                if key.startswith('__') or callable(value) or isinstance(value, (property, classmethod, staticmethod)):
+                    continue
+                try:
+                    json.dumps(value)
+                except (TypeError, ValueError):
+                    continue
+                dat[key] = value
+        if "lr_decays" in dat:
             dat.move_to_end("lr_decays", last=True)
+        with open(target / 'parameters.json', "w") as file:
             json.dump(dat, file, indent=4)
 
     @property

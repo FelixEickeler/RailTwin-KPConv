@@ -116,6 +116,12 @@ class RailTwinConfig(Config):
     in_features_dim = 2
     drop_features = False                   # zero the input features of every point (data without them)
 
+    # Prediction (utils/predictor.py): point fields read from the clouds (x, y, z first, then the input feature
+    # columns), the label field(s) and the one that is predicted (written as preds_<pred_selected>)
+    features = ['x', 'y', 'z', 'above_ground', 'intensity']
+    pred_names = ['system']
+    pred_selected = 'system'
+
     # Can the network learn modulations
     modulated = False
 
@@ -181,6 +187,10 @@ class RailTwinConfig(Config):
     augment_noise = 0.001
     augment_color = 0.8
     augment_height = 0.05
+
+    # Mix3D (datasets/mixing.py): probability that two training spheres of a batch are overlaid into one sample
+    # (out-of-context augmentation, +0.7 to +1.5 mIoU measured with KPConv). 0 = off.
+    augment_mix3d = 0.3
 
     # ALS augmentation (utils/als_simulation.py): mixes ALS-like samples into the training.
     # augment_als = share of training spheres taken from an ALS emulation (0 = off).

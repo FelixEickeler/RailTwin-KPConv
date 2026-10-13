@@ -97,7 +97,8 @@ class InferenceDataset(PointCloudDataset):
 
         # expected_N
         # TODO expect some things
-        self.config.expected_N = 1500000
+        # Tuned for 8.9 m spheres; points per sphere scale with r^2
+        self.config.expected_N = int(1500000 * (self.config.in_radius / 8.9) ** 2)
         return
 
     def initialize_potentials(self):
@@ -973,26 +974,11 @@ class InferenceSampler(Sampler):
                 if breaking:
                     break
 
-            # Plot in case we did not reach convergence
+            # No convergence: stop with a clear error (the original code showed debug plots and divided by zero)
             if not breaking:
-                import matplotlib.pyplot as plt
-
-                print(
-                    "ERROR: It seems that the calibration have not reached convergence. Here are some plot to understand why:")
-                print("If you notice unstability, reduce the expected_N value")
-                print("If convergece is too slow, increase the expected_N value")
-
-                plt.figure()
-                plt.plot(debug_in)
-                plt.plot(debug_out)
-
-                plt.figure()
-                plt.plot(debug_b)
-                plt.plot(debug_estim_b)
-
-                plt.show()
-
-                a = 1 / 0
+                raise RuntimeError(f"Batch calibration did not converge (target {target_b} spheres per batch, last "
+                                   f"estimate {estim_b:.2f}, batch_limit {int(self.dataset.batch_limit)}). If it is "
+                                   f"unstable, reduce config.expected_N, if it is too slow, increase it.")
 
             # Use collected neighbor histogram to get neighbors limit
             cumsum = np.cumsum(neighb_hists.T, axis=0)

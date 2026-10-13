@@ -117,6 +117,7 @@ To switch the dataset or split, change the `import ... as RailTwinDatasetECPPM20
 | `segmentation_loss = {'cross_entropy': 1.0, 'lovasz': 1.0}`, `label_smoothing` | `models/losses.py`, both RailTwin configs | Cross entropy (with `class_w`, label smoothing) plus Lovász-softmax, which optimises the IoU per class. `{'cross_entropy': 1.0}` reproduces the old loss exactly. |
 | `balance_classes = True` | both RailTwin configs, train scripts | Training spheres are centred per class instead of by potentials (the KPConv author's recommendation for rare classes). Validation keeps potentials. Classes without points are skipped instead of hanging the sampler. |
 | `-r / --in-radius` | `train_rtib3+.py`, `train_rtib3+_tl.py` | Overrides the sphere radius for experiments (e.g. 2.5 / 4 / 6 m vs 8.9 m). It is saved to `parameters.json`, so prediction uses the same value. |
+| `augment_mix3d = 0.3` | `datasets/mixing.py`, both RailTwin configs | Mix3D: two training spheres of a batch are overlaid into one sample (out-of-context augmentation, +0.7–1.5 mIoU measured with KPConv). Paused during the batch calibration, training only, 0 = off. |
 | `--schedule real` | `train_rtib3+_tl.py`, `unfreeze_schedule_real` | Fine-tuning on real data: 2 epochs head warm-up, then the whole network at 0.1× learning rate. `--schedule gradual` (default) keeps the layer-by-layer unfreezing. Stages may list several parts and an optional learning rate factor. |
 
 ### 2.5 Utilities
@@ -132,14 +133,17 @@ To switch the dataset or split, change the `import ... as RailTwinDatasetECPPM20
 - **Submodule `railtwin_common`** ([RailTwin-Common](https://github.com/FelixEickeler/RailTwin-Common)):
   IO readers and writers, logger, PCA, KNN voting, track divider and splicer, quadindex.
   Set it up with `git submodule init && git submodule update`.
-- **`docker/`**: CUDA 11.0 / Ubuntu 20.04 image, with PyTorch (cu113), pyarrow, laspy and plyfile.
-  - The container runs as user `point_warrior`, with UID and GID mapped from the host.
-  - Volumes: `SRC` → `~/dataset`, `DST` → `~/workdir`, repo → `~/railtwin_kpconv`.
-  - Ports: SSH on 2244, TensorBoard on 6667.
-  - Start it with:
+- **`docker/`**: Ubuntu 22.04, Python 3.10, PyTorch 2.3.1 with CUDA 12.1 (RTX 30xx / 40xx). One pinned
+  `requirements.txt`; numpy 1.22 and scikit-learn 1.0.2 are kept for `railtwin_common` and cached KD-trees.
+  - **Settings:** in `docker/.env` (from `.env.example`): data and work folder, uid / gid, ssh public key.
+  - **Start-up:** the C++ wrappers are compiled on the first start, and TensorBoard runs on host port 6667.
+  - **Access:** ssh only with keys (no password).
+  - **Start it with:**
     ```bash
-    UUID="$(id -u)" GID="$(id -g)" SRC=<data> DST=<workdir> docker-compose up kpconv -d
+    cd docker && cp .env.example .env && docker compose up -d --build
     ```
+  - **Tested** on an RTX 4090 with a short training, fine-tuning (`--pretrained`, `--schedule real`) and
+    prediction run on synthetic data.
 
 ## 3. Known issues (already present before the sync)
 
