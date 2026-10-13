@@ -1,4 +1,6 @@
 #!/bin/bash
+set -e
+cd "$(dirname "$0")"
 
 # Compile cpp subsampling
 cd cpp_subsampling

@@ -22,3 +22,6 @@ __pycache__/
 
 # Raw notes of the literature review (summary: docs/literature_review_training.md)
 research_notes/
+
+# Docker settings (paths, ids, ssh key)
+docker/.env

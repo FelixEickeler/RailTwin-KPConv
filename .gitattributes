@@ -1,0 +1,4 @@
+# Shell scripts and Docker files run in Linux containers: always LF
+*.sh text eol=lf
+*.Dockerfile text eol=lf
+docker-compose.yml text eol=lf

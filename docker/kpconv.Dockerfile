@@ -1,42 +1,34 @@
-#FROM nvidia/cuda:11.0-devel-ubuntu20.04
-FROM nvidia/cuda:11.0.3-devel-ubuntu20.04
-ENV DEBIAN_FRONTEND noninteractive
-ENV LANG C.UTF-8
-ENV TERM xterm-256color
-#
-RUN rm /etc/apt/sources.list.d/cuda.list
-#RUN rm /etc/apt/sources.list.d/cuda.list && \ apt-key del 7fa2af80 && \ apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
-#RUN rm /etc/apt/sources.list.d/cuda.list
-#RUN rm /etc/apt/sources.list.d/nvidia-ml.list
-#RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/3bf863cc.pub
-#RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu2004/x86_64/7fa2af80.pub
+# RailTwin-KPConv: Ubuntu 22.04, Python 3.10, PyTorch 2.3.1 with CUDA 12.1 (RTX 30xx / 40xx)
+# The PyTorch wheels bring their own CUDA libraries, the base image only provides the driver integration.
+FROM nvidia/cuda:12.1.1-base-ubuntu22.04
 
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    TERM=xterm-256color \
+    PIP_NO_CACHE_DIR=1
 
-RUN apt-get  -y update && apt-get install -y \
-	git sudo nano htop gosu openssh-server \
-    libpython3.8-dev python3 python3-pip wget libgl-dev \
-    python3-tk 
-#
-COPY requirements.txt requirements.txt
-RUN pip3 install -r requirements.txt
-RUN rm requirements.txt
-RUN pip3 install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3 python3-dev python3-pip python3-tk build-essential \
+        git sudo nano htop gosu openssh-server libgl1 \
+    && rm -rf /var/lib/apt/lists/*
 
-# RailTwin Comon Dependecies
-RUN pip3 install pyarrow pybind11 spdlog laspy plyfile
+COPY requirements.txt /tmp/requirements.txt
+RUN pip3 install --upgrade pip \
+    && pip3 install -r /tmp/requirements.txt \
+    && rm /tmp/requirements.txt
 
-# create user, ids are temporary
-ARG USER_ID=1000
-RUN useradd -m --no-log-init point_warrior && yes slice | passwd point_warrior
-RUN usermod -aG sudo point_warrior
-RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
-RUN chown -R point_warrior:sudo /home/point_warrior
-#
-# Create entrypoint
+# User point_warrior; uid / gid are adapted to the host at start (see entrypoint). No password: ssh only with keys,
+# sudo without password for development inside the container.
+RUN useradd -m -s /bin/bash --no-log-init point_warrior \
+    && usermod -aG sudo point_warrior \
+    && echo 'point_warrior ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/point_warrior \
+    && chmod 440 /etc/sudoers.d/point_warrior \
+    && mkdir -p /var/run/sshd \
+    && sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config
+
 COPY kpconv-entrypoint.sh /usr/local/bin/kpconv-entrypoint.sh
 RUN chmod +x /usr/local/bin/kpconv-entrypoint.sh
+
+WORKDIR /home/point_warrior/railtwin_kpconv
 ENTRYPOINT ["/usr/local/bin/kpconv-entrypoint.sh"]
-#
-# Install kpconv-ml
-RUN su point_warrior
-WORKDIR /home/point_warrior
+CMD ["bash"]

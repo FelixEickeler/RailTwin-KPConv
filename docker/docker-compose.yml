@@ -1,30 +1,31 @@
-version: "2.3"
+# RailTwin-KPConv development container
+#
+#   cd docker
+#   cp .env.example .env        # set DATA_DIR, WORK_DIR, ids and ssh key
+#   docker compose up -d --build
+#   docker compose exec kpconv bash      (or: ssh -p 2244 point_warrior@<host>)
+#
 services:
   kpconv:
     build:
       context: .
       dockerfile: kpconv.Dockerfile
+    image: railtwin-kpconv:cu121
     container_name: railtwin_kpconv
-    runtime: nvidia
     stdin_open: true
-    shm_size: "128gb"
+    tty: true
+    gpus: all
+    shm_size: ${SHM_SIZE:-32gb}           # DataLoader workers share batches through /dev/shm
     volumes:
-      - ${SRC}:/home/point_warrior/dataset
-      - ${DST}:/home/point_warrior/workdir
-      -  ..:/home/point_warrior/railtwin_kpconv
+      - ${DATA_DIR:?set DATA_DIR (dataset folder) in docker/.env}:/home/point_warrior/dataset
+      - ${WORK_DIR:?set WORK_DIR (results / caches) in docker/.env}:/home/point_warrior/workdir
+      - ..:/home/point_warrior/railtwin_kpconv
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro  # optional: GUI (mayavi visualisation)
     environment:
-      - LOCAL_UID=${UUID}
-      - LOCAL_GID=${GID}
-      - DISPLAY=$DISPLAY
-      - NVIDIA_VISIBLE_DEVICES=all
+      - LOCAL_UID=${LOCAL_UID:-1000}
+      - LOCAL_GID=${LOCAL_GID:-1000}
+      - SSH_AUTHORIZED_KEYS=${SSH_AUTHORIZED_KEYS:-}
+      - DISPLAY=${DISPLAY:-}
     ports:
-      - "2244:22"
-      - "6667:6006"
-    entrypoint: /usr/local/bin/kpconv-entrypoint.sh
-
-
-volumes:
-  name:
-    driver: local
-
-
+      - "${SSH_PORT:-2244}:22"
+      - "${TENSORBOARD_PORT:-6667}:6006"
