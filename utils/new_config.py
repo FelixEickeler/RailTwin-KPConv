@@ -152,6 +152,10 @@ class Config:
             # This is used to initalize the class from parsed_configs
             data = json.load(file)
 
+        # JSON turns int dict keys into strings; lr_decays is looked up by epoch number
+        if 'lr_decays' in data:
+            data['lr_decays'] = {int(k): v for k, v in data['lr_decays'].items()}
+
         for key, value in data.items():
             setattr(cls, key, value)
         # cls.__dict__.update(data)

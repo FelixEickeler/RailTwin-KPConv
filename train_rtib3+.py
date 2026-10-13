@@ -36,7 +36,7 @@ from models.architectures import KPFCNN
 # from datasets.rtib3p import RTIB3p as RailTwinDatasetECPPM2022
 from datasets.rtib3p_16classes import RTIB3p as RailTwinDatasetECPPM2022
 from datasets.rtib3p import RTIB3pSampler as RailTwinSampler
-from datasets.S3DIS import S3DISCollate as RailTwinCollate
+from datasets.rtib3p import RTIB3pCollate as RailTwinCollate
 from utils.trainer_railtwin import ModelTrainer
 from utils.config_railtwin import RailTwinConfig
 

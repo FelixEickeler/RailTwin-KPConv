@@ -211,6 +211,9 @@ class RTIB3p(PointCloudDataset):
         # Start loading
         self.load_subsampled_clouds(self.work_dir)
 
+        # ALS augmentation: prepare the ALS versions of the training clouds (cached, see config.augment_als)
+        self.prepare_als()
+
         ############################
         # Batch selection parameters
         ############################
@@ -352,11 +355,13 @@ class RTIB3p(PointCloudDataset):
                 pot_points = np.array(self.pot_trees[cloud_ind].data, copy=False)
 
                 # Center point of input region
-                center_point = pot_points[point_ind, :].reshape(1, -1)
+                center_point = np.copy(pot_points[point_ind, :].reshape(1, -1))
 
                 # Add a small noise to center point
                 if self.set != 'ERF':
-                    center_point += np.random.normal(scale=self.config.in_radius / 10, size=center_point.shape)
+                    center_point += np.clip(np.random.normal(scale=self.config.in_radius / 10, size=center_point.shape),
+                                            -self.config.in_radius / 2,
+                                            self.config.in_radius / 2)
 
                 # Indices of points in input region
                 pot_inds, dists = self.pot_trees[cloud_ind].query_radius(center_point,
@@ -399,6 +404,12 @@ class RTIB3p(PointCloudDataset):
                 t += [time.time()]
                 continue
 
+            # ALS emulation (training only): keep what one of the configured flight planes would see
+            als_mask = self.als_augmentation(cloud_ind, input_inds, points, center_point)
+            if als_mask is not None:
+                input_inds = input_inds[als_mask]
+                n = input_inds.shape[0]
+
             # Collect labels and colors
             input_points = (points[input_inds] - center_point).astype(np.float32)
             input_colors = self.input_colors[cloud_ind][input_inds]
@@ -413,13 +424,8 @@ class RTIB3p(PointCloudDataset):
             # Data augmentation
             input_points, scale, R = self.augmentation_transform(input_points)
 
-            # Color augmentation
-            if np.random.rand() > self.config.augment_color:
-                input_colors *= 0
-
-            # Get original height as additional feature
-            input_features = np.hstack((input_colors[:, :1], input_colors[:, 1:2])).astype(np.float32)
-            # input_points[:, 2:] + center_point[:, 2:])).astype(np.float32)
+            # Input features (config.input_features), feature dropout for training
+            input_features = self.point_features(input_colors, input_points, center_point)
 
             t += [time.time()]
 
@@ -460,20 +466,7 @@ class RTIB3p(PointCloudDataset):
         rots = np.stack(R_list, axis=0)
 
         # Input features
-        stacked_features = np.ones_like(stacked_points[:, :1], dtype=np.float32)
-        if self.config.in_features_dim == 1:
-            pass
-        elif self.config.in_features_dim == 2:
-            stacked_features = np.hstack((stacked_features, features[:, :1]))
-        elif self.config.in_features_dim == 3:
-            stacked_features = np.hstack((stacked_features, features[:, :2]))
-        elif self.config.in_features_dim == 4:
-            stacked_features = np.hstack((stacked_features, features[:, :3]))
-        elif self.config.in_features_dim == 5:
-            stacked_features = np.hstack((stacked_features, features))
-        else:
-            # print(self.config.in_features_dim)
-            raise ValueError(f'Only accepted input dimensions are 1, 4 and 7 (without and with XYZ) not {self.config.in_features_dim}')
+        stacked_features = self.stack_input_features(stacked_points, features)
 
         #######################
         # Create network inputs
@@ -588,11 +581,13 @@ class RTIB3p(PointCloudDataset):
             points = np.array(self.input_trees[cloud_ind].data, copy=False)
 
             # Center point of input region
-            center_point = points[point_ind, :].reshape(1, -1)
+            center_point = np.copy(points[point_ind, :].reshape(1, -1))
 
             # Add a small noise to center point
             if self.set != 'ERF':
-                center_point += np.random.normal(scale=self.config.in_radius / 10, size=center_point.shape)
+                center_point += np.clip(np.random.normal(scale=self.config.in_radius / 10, size=center_point.shape),
+                                        -self.config.in_radius / 2,
+                                        self.config.in_radius / 2)
 
             # Indices of points in input region
             input_inds = self.input_trees[cloud_ind].query_radius(center_point,
@@ -608,6 +603,12 @@ class RTIB3p(PointCloudDataset):
                     raise ValueError('It seems this dataset only containes empty input spheres')
                 continue
 
+            # ALS emulation (training only): keep what one of the configured flight planes would see
+            als_mask = self.als_augmentation(cloud_ind, input_inds, points, center_point)
+            if als_mask is not None:
+                input_inds = input_inds[als_mask]
+                n = input_inds.shape[0]
+
             # Collect labels and colors
             input_points = (points[input_inds] - center_point).astype(np.float32)
             input_colors = self.input_colors[cloud_ind][input_inds]
@@ -620,12 +621,8 @@ class RTIB3p(PointCloudDataset):
             # Data augmentation
             input_points, scale, R = self.augmentation_transform(input_points)
 
-            # Color augmentation
-            if np.random.rand() > self.config.augment_color:
-                input_colors *= 0
-
-            # Get original height as additional feature
-            input_features = np.hstack((input_colors, input_points[:, 2:] + center_point[:, 2:])).astype(np.float32)
+            # Input features (config.input_features), feature dropout for training
+            input_features = self.point_features(input_colors, input_points, center_point)
 
             # Stack batch
             p_list += [input_points]
@@ -664,15 +661,7 @@ class RTIB3p(PointCloudDataset):
         rots = np.stack(R_list, axis=0)
 
         # Input features
-        stacked_features = np.ones_like(stacked_points[:, :1], dtype=np.float32)
-        if self.config.in_features_dim == 1:
-            pass
-        elif self.config.in_features_dim == 4:
-            stacked_features = np.hstack((stacked_features, features[:, :3]))
-        elif self.config.in_features_dim == 5:
-            stacked_features = np.hstack((stacked_features, features))
-        else:
-            raise ValueError('Only accepted input dimensions are 1, 4 and 7 (without and with XYZ)')
+        stacked_features = self.stack_input_features(stacked_points, features)
 
         #######################
         # Create network inputs
@@ -1447,3 +1436,153 @@ class RTIB3pSampler(Sampler):
 
         print('Calibration done in {:.1f}s\n'.format(time.time() - t0))
         return
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+#
+#           Custom batch definition with memory pinning
+#       \*******************************************/
+#
+
+
+class RTIB3pCustomBatch:
+    """Custom batch definition with memory pinning for RTIB3p"""
+
+    def __init__(self, input_list):
+
+        # Get rid of batch dimension
+        input_list = input_list[0]
+
+        # Number of layers
+        L = (len(input_list) - 7) // 5
+
+        # Extract input tensors from the list of numpy array
+        ind = 0
+        self.points = [torch.from_numpy(nparray) for nparray in input_list[ind:ind+L]]
+        ind += L
+        self.neighbors = [torch.from_numpy(nparray) for nparray in input_list[ind:ind+L]]
+        ind += L
+        self.pools = [torch.from_numpy(nparray) for nparray in input_list[ind:ind+L]]
+        ind += L
+        self.upsamples = [torch.from_numpy(nparray) for nparray in input_list[ind:ind+L]]
+        ind += L
+        self.lengths = [torch.from_numpy(nparray) for nparray in input_list[ind:ind+L]]
+        ind += L
+        self.features = torch.from_numpy(input_list[ind])
+        ind += 1
+        self.labels = torch.from_numpy(input_list[ind])
+        ind += 1
+        self.scales = torch.from_numpy(input_list[ind])
+        ind += 1
+        self.rots = torch.from_numpy(input_list[ind])
+        ind += 1
+        self.cloud_inds = torch.from_numpy(input_list[ind])
+        ind += 1
+        self.center_inds = torch.from_numpy(input_list[ind])
+        ind += 1
+        self.input_inds = torch.from_numpy(input_list[ind])
+
+        return
+
+    def pin_memory(self):
+        """
+        Manual pinning of the memory
+        """
+
+        self.points = [in_tensor.pin_memory() for in_tensor in self.points]
+        self.neighbors = [in_tensor.pin_memory() for in_tensor in self.neighbors]
+        self.pools = [in_tensor.pin_memory() for in_tensor in self.pools]
+        self.upsamples = [in_tensor.pin_memory() for in_tensor in self.upsamples]
+        self.lengths = [in_tensor.pin_memory() for in_tensor in self.lengths]
+        self.features = self.features.pin_memory()
+        self.labels = self.labels.pin_memory()
+        self.scales = self.scales.pin_memory()
+        self.rots = self.rots.pin_memory()
+        self.cloud_inds = self.cloud_inds.pin_memory()
+        self.center_inds = self.center_inds.pin_memory()
+        self.input_inds = self.input_inds.pin_memory()
+
+        return self
+
+    def to(self, device):
+
+        self.points = [in_tensor.to(device) for in_tensor in self.points]
+        self.neighbors = [in_tensor.to(device) for in_tensor in self.neighbors]
+        self.pools = [in_tensor.to(device) for in_tensor in self.pools]
+        self.upsamples = [in_tensor.to(device) for in_tensor in self.upsamples]
+        self.lengths = [in_tensor.to(device) for in_tensor in self.lengths]
+        self.features = self.features.to(device)
+        self.labels = self.labels.to(device)
+        self.scales = self.scales.to(device)
+        self.rots = self.rots.to(device)
+        self.cloud_inds = self.cloud_inds.to(device)
+        self.center_inds = self.center_inds.to(device)
+        self.input_inds = self.input_inds.to(device)
+
+        return self
+
+    def unstack_points(self, layer=None):
+        """Unstack the points"""
+        return self.unstack_elements('points', layer)
+
+    def unstack_neighbors(self, layer=None):
+        """Unstack the neighbors indices"""
+        return self.unstack_elements('neighbors', layer)
+
+    def unstack_pools(self, layer=None):
+        """Unstack the pooling indices"""
+        return self.unstack_elements('pools', layer)
+
+    def unstack_elements(self, element_name, layer=None, to_numpy=True):
+        """
+        Return a list of the stacked elements in the batch at a certain layer. If no layer is given, then return all
+        layers
+        """
+
+        if element_name == 'points':
+            elements = self.points
+        elif element_name == 'neighbors':
+            elements = self.neighbors
+        elif element_name == 'pools':
+            elements = self.pools[:-1]
+        else:
+            raise ValueError('Unknown element name: {:s}'.format(element_name))
+
+        all_p_list = []
+        for layer_i, layer_elems in enumerate(elements):
+
+            if layer is None or layer == layer_i:
+
+                i0 = 0
+                p_list = []
+                if element_name == 'pools':
+                    lengths = self.lengths[layer_i+1]
+                else:
+                    lengths = self.lengths[layer_i]
+
+                for b_i, length in enumerate(lengths):
+
+                    elem = layer_elems[i0:i0 + length]
+                    if element_name == 'neighbors':
+                        elem[elem >= self.points[layer_i].shape[0]] = -1
+                        elem[elem >= 0] -= i0
+                    elif element_name == 'pools':
+                        elem[elem >= self.points[layer_i].shape[0]] = -1
+                        elem[elem >= 0] -= torch.sum(self.lengths[layer_i][:b_i])
+                    i0 += length
+
+                    if to_numpy:
+                        p_list.append(elem.numpy())
+                    else:
+                        p_list.append(elem)
+
+                if layer == layer_i:
+                    return p_list
+
+                all_p_list.append(p_list)
+
+        return all_p_list
+
+
+def RTIB3pCollate(batch_data):
+    return RTIB3pCustomBatch(batch_data)

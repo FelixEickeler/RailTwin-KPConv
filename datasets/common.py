@@ -30,6 +30,9 @@ from torch.utils.data import DataLoader, Dataset
 from utils.config import Config
 from utils.mayavi_visu import *
 from kernels.kernel_points import create_3D_rotations
+from datasets.rotations import random_rotation
+from datasets.features import LEGACY_FEATURES, select_features, stack_features
+from utils.als_simulation import als_augmentation, prepare_als_versions, prepared_als_mask, prepared_als_settings
 
 # Subsampling extension
 import cpp_wrappers.cpp_subsampling.grid_subsampling as cpp_subsampling
@@ -245,6 +248,79 @@ class PointCloudDataset(Dataset):
         self.label_to_idx = {l: i for i, l in enumerate(self.label_values)}
         self.name_to_label = {v: k for k, v in self.label_to_names.items()}
 
+    def point_features(self, colors, input_points, center_point, names=('above_ground', 'intensity')):
+        """
+        Input features of a sample, chosen by config.input_features (see datasets/features.py). Feature dropout
+        (config.augment_color) only for training samples.
+        :param colors: float[N, C] point fields of the sample, named by names (None: see below)
+        :param input_points: float[N, 3] sample points relative to the centre
+        :param center_point: centre of the sample ('height' = absolute z)
+        """
+        if names is None:
+            # Prediction: columns named by config.features[3:]. Old configs (no input_features) used them by position.
+            if getattr(self.config, 'input_features', None) is None:
+                names = LEGACY_FEATURES[:colors.shape[1]]
+            else:
+                names = list(self.config.features[3:])
+        columns = {name: colors[:, i] for i, name in enumerate(names) if i < colors.shape[1]}
+        columns['height'] = input_points[:, 2] + np.ravel(center_point)[2]
+        return select_features(columns, self.config, training=getattr(self, 'set', None) == 'training')
+
+    def stack_input_features(self, stacked_points, features):
+        """Network input features [1, features] of a batch, checked against config.in_features_dim."""
+        return stack_features(stacked_points, features, self.config)
+
+    def prepare_als(self):
+        """
+        Preparation step of the ALS augmentation (config.augment_als > 0 and augment_als_mode 'prepared'):
+        computes config.augment_als_versions ALS versions of every training cloud, flown in strips over the whole
+        cloud (see utils/als_simulation.py). Stored as bit masks, cached in work_dir/input_<dl>/als.
+        """
+        self.als_versions = None
+        if getattr(self, 'set', None) != 'training' or not (getattr(self.config, 'augment_als', 0.0) or 0.0) > 0:
+            return
+        if getattr(self.config, 'augment_als_mode', 'prepared') != 'prepared':
+            return
+
+        import hashlib
+        import json
+        from pathlib import Path
+
+        settings = prepared_als_settings(self.config)
+        cache_dir = Path(self.work_dir) / 'input_{:.3f}'.format(self.config.first_subsampling_dl) / 'als'
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        self.als_versions = []
+        for cloud_ind, cloud_name in enumerate(self.cloud_names):
+            points = np.array(self.input_trees[cloud_ind].data, copy=False)
+            key = hashlib.sha1(json.dumps([settings, len(points)], sort_keys=True).encode()).hexdigest()[:12]
+            cache_file = cache_dir / f'{cloud_name}_{key}.npy'
+            if cache_file.exists():
+                packed = np.load(cache_file)
+            else:
+                t0 = time.time()
+                seed = int(hashlib.sha1(cloud_name.encode()).hexdigest()[:8], 16)
+                packed = prepare_als_versions(points, settings, seed=seed)
+                np.save(cache_file, packed)
+                print(f'ALS versions of {cloud_name}: {settings["versions"]} in {time.time() - t0:.1f}s')
+            self.als_versions.append(packed)
+
+    def als_augmentation(self, cloud_ind, input_inds, points, center_point):
+        """
+        Mixing step of the ALS augmentation for training samples (config.augment_als, see utils/als_simulation.py).
+        :param cloud_ind: index of the cloud
+        :param input_inds: int[M] indices of the input sphere in the cloud
+        :param points: float[N, 3] all points of the cloud (world coordinates)
+        :param center_point: centre of the input sphere
+        :return: bool[M] mask of the points to keep, or None to keep all
+        """
+        if getattr(self, 'set', None) != 'training':
+            return None
+        if getattr(self.config, 'augment_als_mode', 'prepared') == 'online':
+            return als_augmentation(points[input_inds], self.config, center=np.ravel(center_point)[:2])
+        versions = getattr(self, 'als_versions', None)
+        return prepared_als_mask(versions[cloud_ind] if versions else None, input_inds, self.config)
+
     def augmentation_transform(self, points, normals=None, verbose=False):
         """Implementation of an augmentation transform for point clouds."""
 
@@ -256,33 +332,11 @@ class PointCloudDataset(Dataset):
         R = np.eye(points.shape[1])
 
         if points.shape[1] == 3:
-            if self.config.augment_rotation == 'vertical':
-
-                # Create random rotations
-                theta = np.random.rand() * 2 * np.pi
-                c, s = np.cos(theta), np.sin(theta)
-                R = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]], dtype=np.float32)
-
-            elif self.config.augment_rotation == 'all' or self.config.augment_rotation == "pendulum":
-                if self.config.augment_rotation == "pendulum":
-                    try:
-                        yaw = self.config.augment_rotation_yaw / 360
-                    except:
-                        yaw = 0.028 # 10°
-                else:
-                    yaw = 1
-                # Choose two random angles for the first vector in polar coordinates
-                theta = np.random.rand() * 2 * np.pi
-                phi = (np.random.rand() - 0.5) * np.pi * yaw
-
-                # Create the first vector in carthesian coordinates
-                u = np.array([np.cos(theta) * np.cos(phi), np.sin(theta) * np.cos(phi), np.sin(phi)])
-
-                # Choose a random rotation angle
-                alpha = np.random.rand() * 2 * np.pi
-
-                # Create the rotation matrix with this vector and angle
-                R = create_3D_rotations(np.reshape(u, (1, -1)), np.reshape(alpha, (1, -1)))[0]
+            R = random_rotation(self.config.augment_rotation,
+                                pendulum_yaw=(self.config.augment_rotation_yaw / 360
+                                              if getattr(self.config, 'augment_rotation_yaw', None) is not None
+                                              else None),
+                                max_tilt=getattr(self.config, 'augment_rotation_max_tilt', 10.0))
 
         R = R.astype(np.float32)
 

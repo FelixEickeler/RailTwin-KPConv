@@ -73,8 +73,16 @@ class ModelTrainer:
 
         if chkp_path is not None:
             if finetune:
-                checkpoint = torch.load(chkp_path)
-                net.load_state_dict(checkpoint['model_state_dict'])
+                checkpoint = torch.load(chkp_path, map_location=self.device)
+                # Only load weights with matching shapes. Layers that changed (e.g. head_softmax when the number of
+                # classes differs from the pre-training) keep their fresh initialisation.
+                own_state = net.state_dict()
+                pretrained_state = {k: v for k, v in checkpoint['model_state_dict'].items()
+                                    if k in own_state and v.shape == own_state[k].shape}
+                reinitialized = sorted(set(own_state) - set(pretrained_state))
+                net.load_state_dict(pretrained_state, strict=False)
+                if reinitialized:
+                    print(f"Not loaded from checkpoint (shape mismatch or missing), kept initialised: {reinitialized}")
                 net.train()
                 print("Model restored and ready for finetuning.")
             else:
@@ -118,8 +126,10 @@ class ModelTrainer:
 
         if config.saving:
             # Training log file
-            with open(join(config.saving_path, 'training.txt'), "w") as file:
-                file.write('epochs steps out_loss offset_loss train_accuracy time\n')
+            training_log = join(config.saving_path, 'training.txt')
+            if not exists(training_log):
+                with open(training_log, "w") as file:
+                    file.write('epochs steps out_loss offset_loss train_accuracy time\n')
 
             # Killing file (simply delete this file when you want to stop the training)
             PID_file = join(config.saving_path, 'running_PID.txt')
@@ -136,6 +146,7 @@ class ModelTrainer:
             PID_file = None
 
         # Loop variables
+        stopped = False
         could_not_validate = 0
         t0 = time.time()
         t = [time.time()]
@@ -143,15 +154,11 @@ class ModelTrainer:
         mean_dt = np.zeros(1)
 
         # Start training loop
-        print(f"Staring training with: \n\tlr_decay: {config.lr_decays[1]} \n\tcurrent_epoch: {self.epoch}\n\tmax_epoch: {config.max_epoch}")
+        print(f"Staring training with: \n\tlr_decay: {config.lr_decays.get(1)} \n\tcurrent_epoch: {self.epoch}\n\tmax_epoch: {config.max_epoch}")
 
         for epoch in range(self.epoch, config.max_epoch):
             self.step = 0
             eval_params = []
-            # Remove File for kill signal
-            if epoch == config.max_epoch - 1 and exists(PID_file):
-                remove(PID_file)
-
 
             for batch in training_loader:
 
@@ -222,7 +229,7 @@ class ModelTrainer:
                                                   t[-1] - t0))
 
                 self.step += 1
-                eval_params += [(acc, net.output_loss.item(), net.reg_loss)]
+                eval_params += [(acc, net.output_loss.item(), float(net.reg_loss))]
 
             ##############
             # End of epoch
@@ -231,7 +238,7 @@ class ModelTrainer:
                 eval_params = np.array(eval_params)
                 accuracy, output_loss, offset_loss = np.nanmean(eval_params, axis=0)
             elif len(eval_params) == 1:
-                accuracy, output_loss, offset_loss = eval_params
+                accuracy, output_loss, offset_loss = eval_params[0]
             else:
                 accuracy, output_loss, offset_loss = [0, 0, 0]
 
@@ -244,11 +251,12 @@ class ModelTrainer:
             # self.tb_writer.add_scalar("Train/IoU_worst", worst_IoU, self.epoch)
             # self.tb_writer.add_scalar("Train/IoU_w5)", worst5_IoU, self.epoch)
 
-            self.tb_writer.add_scalar("ιOutput_Loss/Train", output_loss, self.epoch)
-            self.tb_writer.add_scalar("ιReg_Loss/Train", offset_loss, self.epoch)
+            self.tb_writer.add_scalar("Output_Loss/Train", output_loss, self.epoch)
+            self.tb_writer.add_scalar("Reg_Loss/Train", offset_loss, self.epoch)
 
             # Check kill signal (running_PID.txt deleted)
             if config.saving and not exists(PID_file):
+                stopped = True
                 break
 
             # Update learning rate
@@ -259,7 +267,7 @@ class ModelTrainer:
             # Saving
             if config.saving:
                 # Get current state dict
-                save_dict = {'epoch': self.epoch,
+                save_dict = {'epoch': self.epoch + 1,
                              'model_state_dict': net.state_dict(),
                              'optimizer_state_dict': self.optimizer.state_dict(),
                              'saving_path': config.saving_path}
@@ -280,7 +288,7 @@ class ModelTrainer:
                     self.validation(net, val_loader, config)
             except ValueError:
                 could_not_validate += 1
-                val_loader.dataset.load_subsampled_clouds()
+                val_loader.dataset.load_subsampled_clouds(val_loader.dataset.work_dir)
                 val_loader.dataset.initalize_potentials(val_loader.dataset.use_potentials)
                 print("Resetting Tukey weights")
             net.train()
@@ -290,12 +298,55 @@ class ModelTrainer:
             self.epoch += 1
         self.tb_writer.flush()
 
-        checkpoint_path = join(checkpoint_directory, f'chkp_{self.epoch}.tar')
-        torch.save(save_dict, checkpoint_path)
+        if config.saving:
+            save_dict = {'epoch': self.epoch,
+                         'model_state_dict': net.state_dict(),
+                         'optimizer_state_dict': self.optimizer.state_dict(),
+                         'saving_path': config.saving_path}
+            torch.save(save_dict, join(checkpoint_directory, 'current_chkp.tar'))
+            torch.save(save_dict, join(checkpoint_directory, 'chkp_{:04d}.tar'.format(self.epoch)))
+            if not stopped and exists(PID_file):
+                remove(PID_file)
 
         print(f'Finished Training. There where {could_not_validate} times where the validation could not be processed !')
-        self.tb_writer.close()
-        return
+        return not stopped
+
+    def train_with_unfreeze_schedule(self, net, training_loader, val_loader, config):
+        """
+        Transfer learning with gradual unfreezing (config.unfreeze_schedule).
+
+        The network is frozen, then each stage makes one more part trainable and trains it for the given number of
+        epochs. Stage lengths are counted from epoch 0 of the fine-tuning, so a resumed run (self.epoch > 0) skips
+        the stages that are already finished. Without a schedule, the whole network is trained.
+        """
+        schedule = getattr(config, 'unfreeze_schedule', None)
+        if not schedule:
+            return self.train(net, training_loader, val_loader, config)
+
+        max_epoch = config.max_epoch
+        for p in net.parameters():
+            p.requires_grad = False
+
+        stage_end = 0
+        finished = True
+        for part, n_epochs in schedule:
+            for p in getattr(net, part).parameters():
+                p.requires_grad = True
+            stage_end = max_epoch if n_epochs is None else min(stage_end + n_epochs, max_epoch)
+
+            # Stage already done in a previous (resumed) run
+            if self.epoch >= stage_end:
+                continue
+
+            n_trainable = sum(p.numel() for p in net.parameters() if p.requires_grad)
+            print(f"Unfreeze stage '{part}': epochs {self.epoch} -> {stage_end} ({n_trainable} trainable parameters)")
+            config.max_epoch = stage_end
+            finished = self.train(net, training_loader, val_loader, config)
+            if not finished:
+                break
+
+        config.max_epoch = max_epoch
+        return finished
 
     # Validation methods
     # ------------------------------------------------------------------------------------------------------------------
@@ -513,14 +564,14 @@ class ModelTrainer:
             try:
                 outputs = net(batch, config)
             except IndexError:
-                print("Something went very wrong")
-                if error_count < 10:
-                    return
-                else:
+                # Skip a failing batch, give up after 10
+                error_count += 1
+                print(f"Validation batch {i} failed ({error_count} so far)")
+                if error_count > 10:
                     raise
-                    # Request loss
+                continue
             net.loss(outputs, batch.labels)
-            loss.append((net.output_loss.item(), net.reg_loss))
+            loss.append((net.output_loss.item(), float(net.reg_loss)))
             acc.append(net.accuracy(outputs, batch.labels))
 
             # Get probs and labels
@@ -634,12 +685,11 @@ class ModelTrainer:
         t6 = time.time()
 
         # Print instance mean
-        # mIoU = 100 * np.mean(IoUs)
-        # print('{:s} mean IoU = {:.1f}%'.format(config.dataset, mIoU))
+        mIoU = 100 * np.mean(IoUs)
+        print('{:s} mean IoU = {:.1f}%'.format(config.dataset, mIoU))
 
         val_ACC = 100 * np.sum(np.diag(C)) / (np.sum(C) + 1e-6)
-        # vote_ACC = 100 * np.sum(np.diag(C2)) / (np.sum(C2) + 1e-6)
-        print('Accuracies : val = {:.1f}% / vote = {:.1f}%'.format(val_ACC, val_ACC))
+        print('Accuracy : val = {:.1f}%'.format(val_ACC))
 
         # Save predicted cloud occasionally
         if config.saving and (self.epoch + 1) % config.checkpoint_gap == 0:
@@ -694,28 +744,33 @@ class ModelTrainer:
         loss = np.array(loss)
         acc = np.array(acc)
         output_loss, reg_loss = np.nanmean(loss, axis=0)
+        # Class names in the order of the rows of C (sorted label values without the ignored ones)
+        dataset = val_loader.dataset
+        class_names = [dataset.label_to_names[v] for v in dataset.label_values if v not in dataset.ignored_labels]
         worst_Class = IoUs.argmin()
         worst_IoU = IoUs[worst_Class]
-        w5_idx = np.argpartition(IoUs, 5)
-        worst5_IoU = IoUs[w5_idx[:5]]
+        worst5_IoU = np.sort(IoUs)[:min(5, len(IoUs))]
 
+        self.tb_writer.add_scalar("Test/mIoU", mIoU, self.epoch)
         self.tb_writer.add_scalar("Test/Accuracy", acc.mean(), self.epoch)
         self.tb_writer.add_scalar("Test/Loss", output_loss + reg_loss, self.epoch)
-        self.tb_writer.add_scalar("Test/ΙoU_worst", worst_IoU, self.epoch)
-        self.tb_writer.add_scalar("Test/ΙoU_w5)", worst5_IoU.mean(), self.epoch)
-        self.tb_writer.add_scalar("ιOutput_Loss/Test", output_loss, self.epoch)
-        self.tb_writer.add_scalar("ιReg_Loss/Test", reg_loss, self.epoch)
+        self.tb_writer.add_scalar("Test/IoU_worst", worst_IoU, self.epoch)
+        self.tb_writer.add_scalar("Test/IoU_worst5", worst5_IoU.mean(), self.epoch)
+        self.tb_writer.add_scalar("Output_Loss/Test", output_loss, self.epoch)
+        self.tb_writer.add_scalar("Reg_Loss/Test", reg_loss, self.epoch)
+        for name, IoU in zip(class_names, IoUs):
+            self.tb_writer.add_scalar(f"Test/IoU/{name}", 100 * IoU, self.epoch)
 
         # C_normed = C / (C.sum(axis=1) + 1e-6)
         if (self.epoch % config.plot_gap) == 0:
-            labels = [l for i, l in val_loader.dataset.label_to_names.items() if i not in val_loader.dataset.ignored_labels]
+            labels = class_names
             cm_plot = get_confusion_matrix(C, labels)
             sum_plot = get_overview(C, labels)
             self.tb_writer.add_figure("Confusion Matrix", cm_plot, self.epoch)
             self.tb_writer.add_figure("Overview", sum_plot, self.epoch)
             cm_plot.savefig(f"{self.plot_dir}/confusion_matrix-{self.epoch}.svg")
             sum_plot.savefig(f"{self.plot_dir}/summary-{self.epoch}.svg")
-            self.tb_writer.add_text("Test/Class_worst", f"{val_loader.dataset.label_to_names[worst_Class]} : {worst_IoU}", self.epoch)
+            self.tb_writer.add_text("Test/Class_worst", f"{class_names[worst_Class]} : {worst_IoU}", self.epoch)
         return
 
     def slam_segmentation_validation(self, net, val_loader, config, debug=True):

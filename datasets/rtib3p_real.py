@@ -207,6 +207,9 @@ class RTIB3p(PointCloudDataset):
         # Start loading
         self.load_subsampled_clouds(self.work_dir)
 
+        # ALS augmentation: prepare the ALS versions of the training clouds (cached, see config.augment_als)
+        self.prepare_als()
+
         ############################
         # Batch selection parameters
         ############################
@@ -347,11 +350,13 @@ class RTIB3p(PointCloudDataset):
                 pot_points = np.array(self.pot_trees[cloud_ind].data, copy=False)
 
                 # Center point of input region
-                center_point = pot_points[point_ind, :].reshape(1, -1)
+                center_point = np.copy(pot_points[point_ind, :].reshape(1, -1))
 
                 # Add a small noise to center point
                 if self.set != 'ERF':
-                    center_point += np.random.normal(scale=self.config.in_radius / 10, size=center_point.shape)
+                    center_point += np.clip(np.random.normal(scale=self.config.in_radius / 10, size=center_point.shape),
+                                            -self.config.in_radius / 2,
+                                            self.config.in_radius / 2)
 
                 # Indices of points in input region
                 pot_inds, dists = self.pot_trees[cloud_ind].query_radius(center_point,
@@ -393,6 +398,12 @@ class RTIB3p(PointCloudDataset):
                 t += [time.time()]
                 continue
 
+            # ALS emulation (training only): keep what one of the configured flight planes would see
+            als_mask = self.als_augmentation(cloud_ind, input_inds, points, center_point)
+            if als_mask is not None:
+                input_inds = input_inds[als_mask]
+                n = input_inds.shape[0]
+
             # Collect labels and colors
             input_points = (points[input_inds] - center_point).astype(np.float32)
             input_colors = self.input_colors[cloud_ind][input_inds]
@@ -407,13 +418,8 @@ class RTIB3p(PointCloudDataset):
             # Data augmentation
             input_points, scale, R = self.augmentation_transform(input_points)
 
-            # Color augmentation
-            if np.random.rand() > self.config.augment_color:
-                input_colors *= 0
-
-            # Get original height as additional feature
-            input_features = np.hstack((input_colors[:, :1], input_colors[:, 1:2])).astype(np.float32)
-            # input_points[:, 2:] + center_point[:, 2:])).astype(np.float32)
+            # Input features (config.input_features), feature dropout for training
+            input_features = self.point_features(input_colors, input_points, center_point)
 
             t += [time.time()]
 
@@ -454,17 +460,7 @@ class RTIB3p(PointCloudDataset):
         rots = np.stack(R_list, axis=0)
 
         # Input features
-        stacked_features = np.ones_like(stacked_points[:, :1], dtype=np.float32)
-        if self.config.in_features_dim == 1:
-            pass
-        elif self.config.in_features_dim == 3:
-            stacked_features = np.hstack((stacked_features, features[:, :2]))
-        elif self.config.in_features_dim == 4:
-            stacked_features = np.hstack((stacked_features, features[:, :3]))
-        elif self.config.in_features_dim == 5:
-            stacked_features = np.hstack((stacked_features, features))
-        else:
-            raise ValueError('Only accepted input dimensions are 1, 4 and 7 (without and with XYZ)')
+        stacked_features = self.stack_input_features(stacked_points, features)
 
         #######################
         # Create network inputs
@@ -579,11 +575,13 @@ class RTIB3p(PointCloudDataset):
             points = np.array(self.input_trees[cloud_ind].data, copy=False)
 
             # Center point of input region
-            center_point = points[point_ind, :].reshape(1, -1)
+            center_point = np.copy(points[point_ind, :].reshape(1, -1))
 
             # Add a small noise to center point
             if self.set != 'ERF':
-                center_point += np.random.normal(scale=self.config.in_radius / 10, size=center_point.shape)
+                center_point += np.clip(np.random.normal(scale=self.config.in_radius / 10, size=center_point.shape),
+                                        -self.config.in_radius / 2,
+                                        self.config.in_radius / 2)
 
             # Indices of points in input region
             input_inds = self.input_trees[cloud_ind].query_radius(center_point,
@@ -599,6 +597,12 @@ class RTIB3p(PointCloudDataset):
                     raise ValueError('It seems this dataset only containes empty input spheres')
                 continue
 
+            # ALS emulation (training only): keep what one of the configured flight planes would see
+            als_mask = self.als_augmentation(cloud_ind, input_inds, points, center_point)
+            if als_mask is not None:
+                input_inds = input_inds[als_mask]
+                n = input_inds.shape[0]
+
             # Collect labels and colors
             input_points = (points[input_inds] - center_point).astype(np.float32)
             input_colors = self.input_colors[cloud_ind][input_inds]
@@ -611,12 +615,8 @@ class RTIB3p(PointCloudDataset):
             # Data augmentation
             input_points, scale, R = self.augmentation_transform(input_points)
 
-            # Color augmentation
-            if np.random.rand() > self.config.augment_color:
-                input_colors *= 0
-
-            # Get original height as additional feature
-            input_features = np.hstack((input_colors, input_points[:, 2:] + center_point[:, 2:])).astype(np.float32)
+            # Input features (config.input_features), feature dropout for training
+            input_features = self.point_features(input_colors, input_points, center_point)
 
             # Stack batch
             p_list += [input_points]
@@ -655,15 +655,7 @@ class RTIB3p(PointCloudDataset):
         rots = np.stack(R_list, axis=0)
 
         # Input features
-        stacked_features = np.ones_like(stacked_points[:, :1], dtype=np.float32)
-        if self.config.in_features_dim == 1:
-            pass
-        elif self.config.in_features_dim == 4:
-            stacked_features = np.hstack((stacked_features, features[:, :3]))
-        elif self.config.in_features_dim == 5:
-            stacked_features = np.hstack((stacked_features, features))
-        else:
-            raise ValueError('Only accepted input dimensions are 1, 4 and 7 (without and with XYZ)')
+        stacked_features = self.stack_input_features(stacked_points, features)
 
         #######################
         # Create network inputs

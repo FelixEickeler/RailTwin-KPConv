@@ -108,9 +108,13 @@ class RailTwinConfig(Config):
     # Aggregation function of KPConv in ('closest', 'sum')
     aggregation_mode = 'sum'
 
-    # Choice of input features
+    # Choice of input features (datasets/features.py): network input = [1, input_features], so
+    # in_features_dim = 1 + len(input_features). Names: 'above_ground', 'intensity', 'height' (absolute z).
+    # [] = geometry only.
     first_features_dim = 128
+    input_features = ['above_ground']
     in_features_dim = 2
+    drop_features = False                   # zero the input features of every point (data without them)
 
     # Can the network learn modulations
     modulated = False
@@ -147,6 +151,18 @@ class RailTwinConfig(Config):
     lr_decays = {i: 0.1 ** (1 / 50) for i in range(1, max_epoch)}
     grad_clip_norm = 100.0
 
+    # Gradual unfreezing for transfer learning (used with --pretrained).
+    # Each stage makes one more part of the network trainable (on top of the previous stages)
+    # and trains it for the given number of epochs, counted from the start of the fine-tuning.
+    # None = train until max_epoch. An empty list trains the whole network from the start.
+    # Parts: 'head_softmax', 'head_mlp', 'decoder_blocks', 'encoder_blocks'
+    unfreeze_schedule = [
+        ['head_softmax', 11],
+        ['head_mlp', 20],
+        ['decoder_blocks', 20],
+        ['encoder_blocks', None],
+    ]
+
     # Number of batch (decrease to reduce memory cost, but it should remain > 3 for stability)
     batch_num = 3
     val_batch_num = 3
@@ -166,12 +182,36 @@ class RailTwinConfig(Config):
     # Augmentations
     augment_scale_anisotropic = True
     augment_symmetries = [True, True, False]
+    # 'pendulum': random heading + swing of at most augment_rotation_max_tilt degrees (datasets/rotations.py).
+    # 'pendulum_legacy' reproduces the original RailTwin rotation (often upside down) of older trainings.
     augment_rotation = 'pendulum'
+    augment_rotation_max_tilt = 10.0
     augment_scale_min = 0.9
     augment_scale_max = 1.1
     augment_noise = 0.001
     augment_color = 0.8
     augment_height = 0.05
+
+    # ALS augmentation (utils/als_simulation.py): mixes ALS-like samples into the training.
+    # augment_als = share of training spheres taken from an ALS emulation (0 = off).
+    # 'prepared': at dataset load, augment_als_versions ALS versions of every training cloud are computed once
+    #             (flight strips over the whole cloud, headings spread over 180 deg) and cached in work_dir.
+    # 'online':   each sphere is emulated on the fly from one of augment_als_planes (only the sphere occludes).
+    augment_als = 0.0
+    augment_als_mode = 'prepared'
+    augment_als_versions = 2
+    augment_als_height = 100.0              # [m] flying height above the lowest point
+    augment_als_max_scan_angle = 30.0       # [deg] half swath angle
+    augment_als_side_overlap = 0.3          # overlap of neighbouring flight strips
+    augment_als_footprint = 0.3             # [m] beam footprint
+    augment_als_returns = 1                 # returns per beam
+    augment_als_voxel = None                # [m] voxel mode
+    augment_als_planes = [                  # 'online' only: height [m], off_nadir [deg] or offset [m]
+        {'height': 100.0, 'off_nadir': 0.0},
+        {'height': 100.0, 'off_nadir': 15.0},
+        {'height': 100.0, 'off_nadir': 25.0},
+    ]
+    augment_als_random_heading = True       # 'online' only
 
     # The way we balance segmentation loss
     #   > 'none': Each point in the whole batch has the same contribution.

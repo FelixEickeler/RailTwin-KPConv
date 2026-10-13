@@ -240,11 +240,13 @@ class InferenceDataset(PointCloudDataset):
                 pot_points = np.array(self.pot_trees[cloud_ind].data, copy=False)
 
                 # Center point of input region
-                center_point = pot_points[point_ind, :].reshape(1, -1)
+                center_point = np.copy(pot_points[point_ind, :].reshape(1, -1))
 
                 # Add a small noise to center point
                 if self.set != 'ERF':
-                    center_point += np.random.normal(scale=self.config.in_radius / 10, size=center_point.shape)
+                    center_point += np.clip(np.random.normal(scale=self.config.in_radius / 10, size=center_point.shape),
+                                            -self.config.in_radius / 2,
+                                            self.config.in_radius / 2)
 
                 # Indices of points in input region
                 pot_inds, dists = self.pot_trees[cloud_ind].query_radius(center_point,
@@ -300,13 +302,9 @@ class InferenceDataset(PointCloudDataset):
             # Data augmentation
             input_points, scale, R = self.augmentation_transform(input_points)
 
-            # Color augmentation
-            if np.random.rand() > self.config.augment_color:
-                input_features *= 0
-
-            # Get original height as additional feature
-            input_features = np.hstack((input_features[:, :1], input_features[:, 1:2])).astype(np.float32)
-            # input_points[:, 2:] + center_point[:, 2:])).astype(np.float32)
+            # Input features (config.input_features), columns named by config.features[3:]
+            input_features = self.point_features(input_features, input_points, center_point,
+                                                 names=None)
 
             t += [time.time()]
 
@@ -347,19 +345,7 @@ class InferenceDataset(PointCloudDataset):
         rots = np.stack(R_list, axis=0)
 
         # Input features
-        stacked_features = np.ones_like(stacked_points[:, :1], dtype=np.float32)
-        if self.config.in_features_dim == 1:
-            pass
-        elif self.config.in_features_dim == 2:
-            stacked_features = np.hstack((stacked_features, features[:, :1]))
-        elif self.config.in_features_dim == 3:
-            stacked_features = np.hstack((stacked_features, features[:, :2]))
-        elif self.config.in_features_dim == 4:
-            stacked_features = np.hstack((stacked_features, features[:, :3]))
-        elif self.config.in_features_dim == 5:
-            stacked_features = np.hstack((stacked_features, features))
-        else:
-            raise ValueError('Only accepted input dimensions are 1, 4 and 7 (without and with XYZ)')
+        stacked_features = self.stack_input_features(stacked_points, features)
 
         #######################
         # Create network inputs
@@ -474,11 +460,13 @@ class InferenceDataset(PointCloudDataset):
             points = np.array(self.input_trees[cloud_ind].data, copy=False)
 
             # Center point of input region
-            center_point = points[point_ind, :].reshape(1, -1)
+            center_point = np.copy(points[point_ind, :].reshape(1, -1))
 
             # Add a small noise to center point
             if self.set != 'ERF':
-                center_point += np.random.normal(scale=self.config.in_radius / 10, size=center_point.shape)
+                center_point += np.clip(np.random.normal(scale=self.config.in_radius / 10, size=center_point.shape),
+                                        -self.config.in_radius / 2,
+                                        self.config.in_radius / 2)
 
             # Indices of points in input region
             input_inds = self.input_trees[cloud_ind].query_radius(center_point,
@@ -506,12 +494,9 @@ class InferenceDataset(PointCloudDataset):
             # Data augmentation
             input_points, scale, R = self.augmentation_transform(input_points)
 
-            # Color augmentation
-            if np.random.rand() > self.config.augment_color:
-                input_colors *= 0
-
-            # Get original height as additional feature
-            input_features = np.hstack((input_colors, input_points[:, 2:] + center_point[:, 2:])).astype(np.float32)
+            # Input features (config.input_features), columns named by config.features[3:]
+            input_features = self.point_features(input_colors, input_points, center_point,
+                                                 names=None)
 
             # Stack batch
             p_list += [input_points]
@@ -550,15 +535,7 @@ class InferenceDataset(PointCloudDataset):
         rots = np.stack(R_list, axis=0)
 
         # Input features
-        stacked_features = np.ones_like(stacked_points[:, :1], dtype=np.float32)
-        if self.config.in_features_dim == 1:
-            pass
-        elif self.config.in_features_dim == 4:
-            stacked_features = np.hstack((stacked_features, features[:, :3]))
-        elif self.config.in_features_dim == 5:
-            stacked_features = np.hstack((stacked_features, features))
-        else:
-            raise ValueError('Only accepted input dimensions are 1, 4 and 7 (without and with XYZ)')
+        stacked_features = self.stack_input_features(stacked_points, features)
 
         #######################
         # Create network inputs

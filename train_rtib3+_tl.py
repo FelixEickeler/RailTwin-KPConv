@@ -39,7 +39,7 @@ from models.architectures import KPFCNN
 # from datasets.rtib3p import RTIB3p as RailTwinDatasetECPPM2022
 from datasets.rtib3p_16classes_add_3 import RTIB3p as RailTwinDatasetECPPM2022
 from datasets.rtib3p import RTIB3pSampler as RailTwinSampler
-from datasets.S3DIS import S3DISCollate as RailTwinCollate
+from datasets.rtib3p import RTIB3pCollate as RailTwinCollate
 from utils.trainer_railtwin import ModelTrainer
 from utils.config_railtwin_tl import RailTwinConfig
 
@@ -47,10 +47,24 @@ from utils.config_railtwin_tl import RailTwinConfig
 # from train_S3DIS import S3DISConfig as RailTwinConfig
 
 
-def train_railtwin(working_path, previous_training_path=Path(''), fine_tune=True, gid=None):
-    if fine_tune:
-        # not sure about this
-        previous_training_path = working_path
+def find_checkpoint(path):
+    """Return the checkpoint file itself, or the newest *.tar in a run folder (or its checkpoints/ subfolder)."""
+    path = Path(path)
+    if path.is_file():
+        return path.resolve()
+    chkp_dir = path / 'checkpoints' if (path / 'checkpoints').is_dir() else path
+    chkps = sorted(chkp_dir.glob('*.tar'), key=os.path.getmtime)
+    return chkps[-1].resolve() if chkps else None
+
+
+def train_railtwin(working_path, previous_training_path=Path(''), pretrained_path=None, gid=None):
+    """
+    :param working_path: output folder of this run
+    :param previous_training_path: run folder or checkpoint to resume (weights, optimizer and epoch are restored)
+    :param pretrained_path: run folder or checkpoint of the pre-training. Only the weights are loaded, the fine-tuning
+                            starts at epoch 0 and follows config.unfreeze_schedule.
+    :param gid: CUDA_VISIBLE_DEVICES to use, None = pick free GPUs
+    """
 
     ############################
     # Initialize the environment
@@ -78,28 +92,19 @@ def train_railtwin(working_path, previous_training_path=Path(''), fine_tune=True
     else:
         os.environ['CUDA_VISIBLE_DEVICES'] = gid
 
-    ###############
-    # Previous chkp
-    ###############
-    # Choose index of checkpoint to start from. If None, uses the latest chkp
-    chkp_idx = None
-    if previous_training_path.exists() and (previous_training_path / 'checkpoints').exists():
-        # Find all snapshot in the chosen training folder
-        chkp_path = previous_training_path / 'checkpoints'
-        if chkp_path.exists():
-            chkps = list(chkp_path.glob("chkp_*.tar"))
-            if len(chkps) != 0:
-                chkps.sort(key=lambda x: os.path.getmtime(x))
-                if not chkp_path.is_dir():
-                    chkp_idx = chkps.index(chkp_path.name)
-                    chosen_chkp = chkps[chkp_idx]
-                else:
-                    chosen_chkp = chkps[-1].resolve()
-                chosen_chkp = os.path.join('results', previous_training_path, 'checkpoints', chosen_chkp)
-                print(f"Continuing from: {chosen_chkp}")
-
-            else:
-                chosen_chkp = None
+    ############
+    # Checkpoint
+    ############
+    finetune = pretrained_path is not None
+    if finetune:
+        chosen_chkp = find_checkpoint(pretrained_path)
+        if chosen_chkp is None:
+            raise FileNotFoundError(f"No checkpoint found in {pretrained_path}")
+        print(f"Fine-tuning from: {chosen_chkp}")
+    elif previous_training_path.exists():
+        chosen_chkp = find_checkpoint(previous_training_path)
+        if chosen_chkp is not None:
+            print(f"Continuing from: {chosen_chkp}")
     else:
         chosen_chkp = None
 
@@ -114,9 +119,13 @@ def train_railtwin(working_path, previous_training_path=Path(''), fine_tune=True
     # Initialize configuration class
     config = RailTwinConfig()
 
-    # TODO Add new config
-    if previous_training_path.exists() and (previous_training_path / 'parameters.txt').exists():
-        config.load(str(previous_training_path))
+    # Resuming: use the configuration of that run. Fine-tuning keeps this script's configuration.
+    if chosen_chkp is not None and not finetune:
+        run_dir = previous_training_path if previous_training_path.is_dir() else previous_training_path.parent.parent
+        for name in ['parameters.json', 'parameters.txt']:
+            if (run_dir / name).exists():
+                config = RailTwinConfig.load(run_dir / name)
+                break
         config.saving_path = None
 
     # Get path from argument if given
@@ -181,7 +190,7 @@ def train_railtwin(working_path, previous_training_path=Path(''), fine_tune=True
         tb_logdir = Path(config.saving_path) / "logdir"
         cnt = len(list(tb_logdir.glob(date_head + "_*")))
         tb_logdir = tb_logdir / f"{date_head}_experiment_{cnt}"
-    trainer = ModelTrainer(net, config, chkp_path=chosen_chkp, tb_logdir=tb_logdir, finetune=True, continue_epoch=True)
+    trainer = ModelTrainer(net, config, chkp_path=chosen_chkp, tb_logdir=tb_logdir, finetune=finetune)
     print('Done in {:.1f}s\n'.format(time.time() - t1))
 
     config.save()
@@ -189,38 +198,8 @@ def train_railtwin(working_path, previous_training_path=Path(''), fine_tune=True
     print('\nStart training')
     print('**************')
 
-    # # Training
-    # max_epoch = config.max_epoch
-    # for p in net.parameters():
-    #     p.requires_grad = False
-    #
-    # # last layer unfreeze
-    # print("1: Adjusting head_softmax layer")
-    # for p in net.head_softmax.parameters():
-    #     p.requires_grad = True
-    # config.max_epoch = trainer.epoch + 11
-    # trainer.train(net, training_loader, test_loader, config)
-    #
-    # # print("2: Adjusting head_mlp layer")
-    # # mlp unfreeze
-    # for p in net.head_mlp.parameters():
-    #     p.requires_grad = True
-    # config.max_epoch = trainer.epoch + 20
-    # trainer.train(net, training_loader, test_loader, config)
-    #
-    # # decoder_block unfreeze
-    # print("3_ Adjusting decoder layer")
-    # for p in net.decoder_blocks.parameters():
-    #     p.requires_grad = True
-    # config.max_epoch = trainer.epoch + (51 - trainer.epoch)
-    # trainer.train(net, training_loader, test_loader, config)
-    #
-    # print("4_Adjusting encoder layer")
-    # for p in net.encoder_blocks.parameters():
-    #     p.requires_grad = True
-    #
-    # config.max_epoch = max_epoch
-    trainer.train(net, training_loader, test_loader, config)
+    # Gradual unfreezing, see unfreeze_schedule in utils/config_railtwin_tl.py
+    trainer.train_with_unfreeze_schedule(net, training_loader, test_loader, config)
 
     print('Forcing exit now')
     os.kill(os.getpid(), signal.SIGINT)
@@ -231,8 +210,10 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Launch from Docker')
     parser.add_argument('-o', '--results', type=Path, help="Path to wherever everything happens", default="~/workdir")
-    parser.add_argument('-ptp', '--chkp_path', type=Path, help="Checkpoint you want to continue from", default="/default/thing/that/does/not/exist")
-    parser.add_argument('-ft', "--fine_tune", action='store_true', default=False)
+    parser.add_argument('-ptp', '--chkp_path', type=Path, help="Run folder or checkpoint to resume (weights, optimizer, epoch)", default="/default/thing/that/does/not/exist")
+    parser.add_argument('-pt', '--pretrained', type=Path, help="Run folder or checkpoint of the pre-training (weights only, starts the unfreeze schedule at epoch 0)", default=None)
+    parser.add_argument('-ft', "--fine_tune", action='store_true', default=False,
+                        help="Deprecated: same as --pretrained <results>, i.e. the pre-trained checkpoint was copied into the output folder")
     parser.add_argument('-gid', "--gpu_id", type=str, default=None)
     # parser.add_argument('--config_path', type=Path, help="Config path to load", default="/default/thing/that/does/not/exist")
     args = parser.parse_args()
@@ -240,4 +221,7 @@ if __name__ == '__main__':
 
     # args.chkp_path  = ""
 
-    train_railtwin(args.results.expanduser(), args.chkp_path.expanduser(), fine_tune=args.fine_tune, gid=args.gpu_id)  # , args.config_path.expanduser())
+    pretrained = args.pretrained.expanduser() if args.pretrained else None
+    if args.fine_tune and pretrained is None:
+        pretrained = args.results.expanduser()
+    train_railtwin(args.results.expanduser(), args.chkp_path.expanduser(), pretrained_path=pretrained, gid=args.gpu_id)  # , args.config_path.expanduser())

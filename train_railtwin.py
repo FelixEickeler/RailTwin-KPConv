@@ -33,9 +33,15 @@ from models.architectures import KPFCNN
 # from datasets.S3DIS import S3DISDataset as RailTwinDatasetECPPM2022
 # from datasets.RailTwin_Ecppm2022 import RailTwinDatasetECPPM2022
 # from datasets.S3DIS import S3DISDataset as RailTwinDatasetECPPM2022
-from datasets.RailTwin_static import RailTwinStatic as RailTwinDatasetECPPM2022
-from datasets.S3DIS import S3DISSampler as RailTwinSampler
-from datasets.S3DIS import S3DISCollate as RailTwinCollate
+try:
+    from datasets.RailTwin_static import RailTwinStatic as RailTwinDatasetECPPM2022
+except ImportError:
+    # RailTwin_static (ECPPM 2022 dataset) is not part of this repository; fall back to the RTIB3+ dataset
+    import warnings
+    warnings.warn('datasets.RailTwin_static not found, falling back to datasets.rtib3p.RTIB3p')
+    from datasets.rtib3p import RTIB3p as RailTwinDatasetECPPM2022
+from datasets.rtib3p import RTIB3pSampler as RailTwinSampler
+from datasets.rtib3p import RTIB3pCollate as RailTwinCollate
 from utils.trainer_railtwin import ModelTrainer
 from utils.config_railtwin import RailTwinConfig
 # from train_S3DIS import S3DISConfig as RailTwinConfig

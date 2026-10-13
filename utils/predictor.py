@@ -4,6 +4,7 @@
 # ----------------------------------------------------------------------------------------------------------------
 #
 #
+import hashlib
 import os
 import pickle
 import shutil
@@ -16,11 +17,11 @@ import torch
 from sklearn.neighbors import KDTree
 from torch.utils.data import DataLoader
 
-from datasets.RailTwin_priming import S3DISCollate
+from datasets.rtib3p import RTIB3pCollate
 from datasets.common import grid_subsampling
 from datasets.inference_dataset import InferenceDataset, InferenceSampler
 from models.architectures import KPFCNN
-from railtwin_common.algorithms.voting import KnnVoting
+from utils.voting import knn_voting
 from railtwin_common.common.io.io_options import IOOptions
 from railtwin_common.common.io.reader.ply import read_ply
 from railtwin_common.common.io.writer.ply import ply_writer
@@ -52,7 +53,11 @@ class Predictor:
 
         self.model.to(self.device)
         self.epoch = 0
-        checkpoint = torch.load(cfg.chkp_path)
+        checkpoint = torch.load(cfg.chkp_path, map_location=self.device)
+        # Cached predictions are only valid for this checkpoint and subsampling
+        chkp = Path(cfg.chkp_path)
+        self.model_key = hashlib.sha1(f"{chkp.resolve()}|{chkp.stat().st_mtime}|{chkp.stat().st_size}|"
+                                      f"{self.config.first_subsampling_dl}".encode()).hexdigest()[:10]
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.model.eval()
 
@@ -76,7 +81,12 @@ class Predictor:
         logger.info("Subsampling points...")
         dl = self.config.first_subsampling_dl
         tmp_set = pointcloud[self.config.features].to_numpy(np.float32)
-        labels = pointcloud[self.config.pred_names].to_numpy(np.int32)
+        if all(name in pointcloud for name in self.config.pred_names):
+            labels = pointcloud[self.config.pred_names].to_numpy(np.int32)
+        else:
+            # Unlabelled cloud: placeholder labels (a valid label value, not used for the prediction)
+            placeholder = min(self.config.labels.values()) if isinstance(self.config.labels, dict) else 0
+            labels = np.full((len(pointcloud), len(self.config.pred_names)), placeholder, dtype=np.int32)
         points, features, labels = grid_subsampling(tmp_set[:, :3], tmp_set[:, 3:], labels, sampleDl=dl)
 
         subsampled = pandas.DataFrame(np.hstack([points, features]), columns=self.config.features).join(
@@ -120,8 +130,8 @@ class Predictor:
                 lengths = batch.lengths[0].cpu().numpy()
                 in_inds = batch.input_inds.cpu().numpy()
                 cloud_inds = batch.cloud_inds.cpu().numpy()
-                torch.cuda.synchronize(self.device)
-                torch.cuda.empty_cache()
+                if self.device.type == 'cuda':
+                    torch.cuda.synchronize(self.device)
 
                 i0 = 0
                 for b_i, length in enumerate(lengths):
@@ -182,7 +192,14 @@ class Predictor:
 
     @torch.no_grad()
     def run_on_cloud(self, pointcloud: pandas.DataFrame, cache_name="tmp"):
+        cache_name = f"{cache_name}_{self.model_key}"
 
+        # Work in local coordinates: float32 is not precise enough for georeferenced coordinates
+        xyz_names = list(self.config.features[:3])
+        full_xyz = pointcloud[xyz_names].to_numpy(np.float64)
+        offset = np.floor(full_xyz.min(axis=0))
+        local_cloud = pointcloud.copy()
+        local_cloud[xyz_names] = full_xyz - offset
 
         inference_path = self.folder / f"{cache_name}_predictions.ply"
         tree_folder = self.folder  # / "KDTrees"
@@ -190,7 +207,7 @@ class Predictor:
 
         if not inference_path.exists():
             # subsample
-            subsampled_path, subsampled, subtree, features, labels = self.subsample(pointcloud=pointcloud, tree_path=tree_path, cache_name=cache_name)
+            subsampled_path, subsampled, subtree, features, labels = self.subsample(pointcloud=local_cloud, tree_path=tree_path, cache_name=cache_name)
 
             # Setup Dataset
             tree_folder.mkdir(parents=True, exist_ok=True)
@@ -201,7 +218,7 @@ class Predictor:
             test_loader = DataLoader(dataset,
                                      batch_size=1,
                                      sampler=sampler,
-                                     collate_fn=S3DISCollate,
+                                     collate_fn=RTIB3pCollate,
                                      num_workers=self.config.input_threads,
                                      pin_memory=True)
 
@@ -215,16 +232,16 @@ class Predictor:
             prediction = self.infer(test_loader=test_loader, dataset=dataset,
                                     subsampled=subsampled, inference_path=inference_path)
         else:
-            logger.info("Predictions found: {inference_path.name}")
+            logger.info(f"Predictions found: {inference_path.name}")
             prediction = read_ply(inference_path)
             with open(tree_path, 'rb') as f:
                 subtree = pickle.load(f)
 
         logger.info(f"Big play with {len(prediction)} of points")
 
-        knn_voting_scheme = KnnVoting(prediction, pointcloud, self.selected_property, search_tree=subtree,knn=5)
-        logger.info("Now starting apply")
-        pointcloud[self.selected_property] = pointcloud.apply(knn_voting_scheme, axis=1, raw=False)
+        logger.info("Transferring the labels to the full cloud")
+        pointcloud[self.selected_property] = knn_voting(subtree, prediction[self.selected_property].to_numpy(),
+                                                        full_xyz - offset, knn=5)
         # print(f"in seconds: {t2 -t1}")
         logger.info("PointCloud ready")
         return pointcloud

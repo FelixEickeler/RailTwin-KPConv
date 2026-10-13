@@ -33,8 +33,10 @@ import torch
 # Dataset
 from datasets.ModelNet40 import *
 from datasets.S3DIS import *
+from datasets.SensatUrban import *
 from datasets.SemanticKitti import *
-from datasets.rtib3p import RTIB3pSampler
+from datasets.Toronto3D import *
+from datasets.rtib3p import RTIB3pSampler, RTIB3pCollate
 import importlib
 from torch.utils.data import DataLoader
 
@@ -57,7 +59,7 @@ def model_choice(chosen_log):
     ###########################
 
     # Automatically retrieve the last trained model
-    if chosen_log in ['last_ModelNet40', 'last_ShapeNetPart', 'last_S3DIS', 'last_rtib+']:
+    if chosen_log in ['last_ModelNet40', 'last_ShapeNetPart', 'last_S3DIS', 'last_SensatUrban', 'last_rtib+']:
 
         # Dataset name
         test_dataset = '_'.join(chosen_log.split('_')[1:])
@@ -73,7 +75,7 @@ def model_choice(chosen_log):
                 chosen_log = log
                 break
 
-        if chosen_log in ['last_ModelNet40', 'last_ShapeNetPart', 'last_S3DIS']:
+        if chosen_log in ['last_ModelNet40', 'last_ShapeNetPart', 'last_S3DIS', 'last_SensatUrban']:
             raise ValueError('No log of the dataset "' + test_dataset + '" found')
 
     # Check if log exists
@@ -185,6 +187,14 @@ if __name__ == '__main__':
         test_dataset = S3DISDataset(config, set='validation', use_potentials=True)
         test_sampler = S3DISSampler(test_dataset)
         collate_fn = S3DISCollate
+    elif config.dataset == 'SensatUrban':
+        test_dataset = SensatUrbanDataset(config, set='validation', use_potentials=True)
+        test_sampler = SensatUrbanSampler(test_dataset)
+        collate_fn = SensatUrbanCollate
+    elif config.dataset == 'Toronto3D':
+        test_dataset = Toronto3DDataset(config, set='test', use_potentials=True)
+        test_sampler = Toronto3DSampler(test_dataset)
+        collate_fn = Toronto3DCollate
     elif config.dataset == 'SemanticKitti':
         test_dataset = SemanticKittiDataset(config, set=set, balance_classes=False)
         test_sampler = SemanticKittiSampler(test_dataset)
@@ -192,7 +202,7 @@ if __name__ == '__main__':
     elif config.dataset in ['rtib+', "RailTwin", "-rtib"]:
         test_dataset = RTIB3p(config, set='validation', use_potentials=True)
         test_sampler = RTIB3pSampler(test_dataset)
-        collate_fn = S3DISCollate
+        collate_fn = RTIB3pCollate
     else:
         raise ValueError('Unsupported dataset : ' + config.dataset)
 
