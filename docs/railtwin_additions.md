@@ -110,6 +110,15 @@ To switch the dataset or split, change the `import ... as RailTwinDatasetECPPM20
 | `test_railtwin.py` | Inference CLI: `-m` model, `-i` input file or folder, `-o` output, `-gid` GPU. Reads clouds through `railtwin_common` IO. |
 | `utils/predictor.py` | `Predictor`: subsamples, runs KPFCNN over `InferenceDataset`, and maps predictions back to the full cloud with `KnnVoting`. Writes PLY files with `railtwin_common`. |
 
+### 2.4b Training options (from the literature review, `docs/literature_review_training.md`)
+
+| Option | Where | What |
+|---|---|---|
+| `segmentation_loss = {'cross_entropy': 1.0, 'lovasz': 1.0}`, `label_smoothing` | `models/losses.py`, both RailTwin configs | Cross entropy (with `class_w`, label smoothing) plus Lovász-softmax, which optimises the IoU per class. `{'cross_entropy': 1.0}` reproduces the old loss exactly. |
+| `balance_classes = True` | both RailTwin configs, train scripts | Training spheres are centred per class instead of by potentials (the KPConv author's recommendation for rare classes). Validation keeps potentials. Classes without points are skipped instead of hanging the sampler. |
+| `-r / --in-radius` | `train_rtib3+.py`, `train_rtib3+_tl.py` | Overrides the sphere radius for experiments (e.g. 2.5 / 4 / 6 m vs 8.9 m). It is saved to `parameters.json`, so prediction uses the same value. |
+| `--schedule real` | `train_rtib3+_tl.py`, `unfreeze_schedule_real` | Fine-tuning on real data: 2 epochs head warm-up, then the whole network at 0.1× learning rate. `--schedule gradual` (default) keeps the layer-by-layer unfreezing. Stages may list several parts and an optional learning rate factor. |
+
 ### 2.5 Utilities
 
 | File | Purpose |

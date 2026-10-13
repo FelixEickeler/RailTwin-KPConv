@@ -110,7 +110,9 @@ def train_railtwin(working_dir, previous_training_path=Path(''), config_path=Pat
         config.saving_path = Path("results")
 
     # Initialize datasets
-    training_dataset = RailTwinDatasetECPPM2022(config, set='training', use_potentials=True)
+    # Class-balanced training spheres (config.balance_classes) instead of potentials; validation keeps potentials
+    training_dataset = RailTwinDatasetECPPM2022(config, set='training',
+                                                use_potentials=not getattr(config, 'balance_classes', False))
     test_dataset = RailTwinDatasetECPPM2022(config, set='validation', use_potentials=True)
     # test_dataset = RailTwinDatasetECPPM2022(config, set='test', use_potentials=True)
 

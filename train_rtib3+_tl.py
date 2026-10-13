@@ -57,13 +57,14 @@ def find_checkpoint(path):
     return chkps[-1].resolve() if chkps else None
 
 
-def train_railtwin(working_path, previous_training_path=Path(''), pretrained_path=None, gid=None):
+def train_railtwin(working_path, previous_training_path=Path(''), pretrained_path=None, gid=None, overrides=None):
     """
     :param working_path: output folder of this run
     :param previous_training_path: run folder or checkpoint to resume (weights, optimizer and epoch are restored)
     :param pretrained_path: run folder or checkpoint of the pre-training. Only the weights are loaded, the fine-tuning
                             starts at epoch 0 and follows config.unfreeze_schedule.
     :param gid: CUDA_VISIBLE_DEVICES to use, None = pick free GPUs
+    :param overrides: dict of config values to override (command line)
     """
 
     ############################
@@ -132,8 +133,16 @@ def train_railtwin(working_path, previous_training_path=Path(''), pretrained_pat
     if working_path.exists():
         config.saving_path = str(working_path)
 
+    # Command line overrides (e.g. --in-radius for sphere size experiments). Set on the class, because
+    # config.save() writes the class attributes to parameters.json (prediction reads them from there).
+    for key, value in (overrides or {}).items():
+        print(f"Config override: {key} = {value}")
+        setattr(type(config), key, value)
+
     # Initialize datasets
-    training_dataset = RailTwinDatasetECPPM2022(config, set='training', use_potentials=True)
+    # Class-balanced training spheres (config.balance_classes) instead of potentials; validation keeps potentials
+    training_dataset = RailTwinDatasetECPPM2022(config, set='training',
+                                                use_potentials=not getattr(config, 'balance_classes', False))
     test_dataset = RailTwinDatasetECPPM2022(config, set='validation', use_potentials=True)
     # test_dataset = RailTwinDatasetECPPM2022(config, set='test', use_potentials=True)
 
@@ -215,6 +224,11 @@ if __name__ == '__main__':
     parser.add_argument('-ft', "--fine_tune", action='store_true', default=False,
                         help="Deprecated: same as --pretrained <results>, i.e. the pre-trained checkpoint was copied into the output folder")
     parser.add_argument('-gid', "--gpu_id", type=str, default=None)
+    parser.add_argument('-r', '--in-radius', type=float, default=None,
+                        help="Override config.in_radius [m] (input sphere radius), e.g. for 2.5 / 4 / 6 m experiments")
+    parser.add_argument('--schedule', choices=['gradual', 'real'], default='gradual',
+                        help="Unfreeze schedule: 'gradual' (unfreeze_schedule, layer by layer) or 'real' "
+                             "(unfreeze_schedule_real: short head warm-up, then the whole network at reduced LR)")
     # parser.add_argument('--config_path', type=Path, help="Config path to load", default="/default/thing/that/does/not/exist")
     args = parser.parse_args()
     # print(args)
@@ -224,4 +238,8 @@ if __name__ == '__main__':
     pretrained = args.pretrained.expanduser() if args.pretrained else None
     if args.fine_tune and pretrained is None:
         pretrained = args.results.expanduser()
-    train_railtwin(args.results.expanduser(), args.chkp_path.expanduser(), pretrained_path=pretrained, gid=args.gpu_id)  # , args.config_path.expanduser())
+    overrides = {'in_radius': args.in_radius} if args.in_radius is not None else {}
+    if args.schedule == 'real':
+        overrides['unfreeze_schedule'] = RailTwinConfig.unfreeze_schedule_real
+    train_railtwin(args.results.expanduser(), args.chkp_path.expanduser(), pretrained_path=pretrained, gid=args.gpu_id,
+                   overrides=overrides)  # , args.config_path.expanduser())

@@ -15,6 +15,7 @@
 #
 
 from models.blocks import *
+from models.losses import SegmentationLoss
 import numpy as np
 
 
@@ -303,12 +304,8 @@ class KPFCNN(nn.Module):
         # List of valid labels (those not ignored in loss)
         self.valid_labels = np.sort([c for c in lbl_values if c not in ign_lbls])
 
-        # Choose segmentation loss
-        if len(config.class_w) > 0:
-            class_w = torch.from_numpy(np.array(config.class_w, dtype=np.float32))
-            self.criterion = torch.nn.CrossEntropyLoss(weight=class_w, ignore_index=-1)
-        else:
-            self.criterion = torch.nn.CrossEntropyLoss(ignore_index=-1)
+        # Choose segmentation loss: cross entropy (class_w, label_smoothing) and/or Lovasz-softmax, see models/losses.py
+        self.criterion = SegmentationLoss(config)
         self.deform_fitting_mode = config.deform_fitting_mode
         self.deform_fitting_power = config.deform_fitting_power
         self.deform_lr_factor = config.deform_lr_factor

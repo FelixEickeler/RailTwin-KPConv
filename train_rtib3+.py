@@ -44,7 +44,7 @@ from utils.config_railtwin import RailTwinConfig
 # from train_S3DIS import S3DISConfig as RailTwinConfig
 
 
-def train_railtwin(working_path, previous_training_path=Path(''), fine_tune=False, gid=None):
+def train_railtwin(working_path, previous_training_path=Path(''), fine_tune=False, gid=None, overrides=None):
     if fine_tune:
         # not sure about this
         previous_training_path = working_path
@@ -116,8 +116,16 @@ def train_railtwin(working_path, previous_training_path=Path(''), fine_tune=Fals
     if working_path.exists():
         config.saving_path = str(working_path)
 
+    # Command line overrides (e.g. --in-radius for sphere size experiments). Set on the class, because
+    # config.save() writes the class attributes to parameters.json (prediction reads them from there).
+    for key, value in (overrides or {}).items():
+        print(f"Config override: {key} = {value}")
+        setattr(type(config), key, value)
+
     # Initialize datasets
-    training_dataset = RailTwinDatasetECPPM2022(config, set='training', use_potentials=True)
+    # Class-balanced training spheres (config.balance_classes) instead of potentials; validation keeps potentials
+    training_dataset = RailTwinDatasetECPPM2022(config, set='training',
+                                                use_potentials=not getattr(config, 'balance_classes', False))
     training_sampler = RailTwinSampler(training_dataset)
 
     test_dataset = RailTwinDatasetECPPM2022(config, set='validation', use_potentials=True)
@@ -200,10 +208,14 @@ if __name__ == '__main__':
     parser.add_argument('-ptp', '--chkp_path', type=Path, help="Checkpoint you want to continue from", default="/default/thing/that/does/not/exist")
     parser.add_argument('-ft', "--fine_tune", action='store_true', default=False)
     parser.add_argument('-gid', "--gpu_id", type=str, default=None)
+    parser.add_argument('-r', '--in-radius', type=float, default=None,
+                        help="Override config.in_radius [m] (input sphere radius), e.g. for 2.5 / 4 / 6 m experiments")
     # parser.add_argument('--config_path', type=Path, help="Config path to load", default="/default/thing/that/does/not/exist")
     args = parser.parse_args()
     # print(args)
 
     # args.chkp_path  = ""
 
-    train_railtwin(args.results.expanduser(), args.chkp_path.expanduser(), fine_tune=args.fine_tune, gid=args.gpu_id)  # , args.config_path.expanduser())
+    overrides = {'in_radius': args.in_radius} if args.in_radius is not None else {}
+    train_railtwin(args.results.expanduser(), args.chkp_path.expanduser(), fine_tune=args.fine_tune, gid=args.gpu_id,
+                   overrides=overrides)  # , args.config_path.expanduser())

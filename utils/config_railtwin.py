@@ -207,7 +207,16 @@ class RailTwinConfig(Config):
     #   > 'none': Each point in the whole batch has the same contribution.
     #   > 'class': Each class has the same contribution (points are weighted according to class balance)
     #   > 'batch': Each cloud in the batch has the same contribution (points are weighted according cloud sizes)
-    segloss_balance = 'none'
+    segloss_balance = 'none'                # deprecated in KPConv, has no effect (use class_w / segmentation_loss)
+
+    # Segmentation loss (models/losses.py): weights of cross entropy and Lovasz-softmax (optimises the IoU directly,
+    # commonly combined 1:1 for LiDAR segmentation), label smoothing of the cross entropy (0 = off, 0.1-0.2 usual)
+    segmentation_loss = {'cross_entropy': 1.0, 'lovasz': 1.0}
+    label_smoothing = 0.0
+
+    # Class-balanced training spheres: centres are drawn per class instead of by potentials (training set only,
+    # validation keeps potentials). Recommended by the KPConv author for rare classes.
+    balance_classes = True
 
     # Do we nee to save convergence
     saving = True

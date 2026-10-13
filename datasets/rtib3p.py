@@ -1000,6 +1000,11 @@ class RTIB3pSampler(Sampler):
 
                     # Select a a random number amongst them
                     N_inds = all_label_indices.shape[1]
+                    if N_inds == 0:
+                        # Class absent from these clouds: skip it (repeating an empty list would never end)
+                        warnings.warn('Class {:d}: {:s} has no points in the training clouds, no spheres are centred '
+                                      'on it'.format(label, self.dataset.label_names[label_ind]))
+                        continue
                     if N_inds < random_pick_n:
                         chosen_label_inds = np.zeros((2, 0), dtype=np.int64)
                         while chosen_label_inds.shape[1] < random_pick_n:
@@ -1026,6 +1031,11 @@ class RTIB3pSampler(Sampler):
 
                     # Stack for each label
                     all_epoch_inds = np.hstack((all_epoch_inds, chosen_label_inds))
+
+            # Absent classes were skipped: fill up with centres of the present classes
+            if 0 < all_epoch_inds.shape[1] < num_centers:
+                extra = np.random.choice(all_epoch_inds.shape[1], num_centers - all_epoch_inds.shape[1])
+                all_epoch_inds = np.hstack((all_epoch_inds, all_epoch_inds[:, extra]))
 
             # Random permutation of the indices
             random_order = np.random.permutation(all_epoch_inds.shape[1])[:num_centers]

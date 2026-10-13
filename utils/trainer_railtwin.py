@@ -315,9 +315,14 @@ class ModelTrainer:
         """
         Transfer learning with gradual unfreezing (config.unfreeze_schedule).
 
-        The network is frozen, then each stage makes one more part trainable and trains it for the given number of
+        The network is frozen, then each stage makes more parts trainable and trains for the given number of
         epochs. Stage lengths are counted from epoch 0 of the fine-tuning, so a resumed run (self.epoch > 0) skips
         the stages that are already finished. Without a schedule, the whole network is trained.
+
+        A stage is [parts, epochs] or [parts, epochs, lr_factor]:
+            parts      one part name ('head_softmax', 'head_mlp', 'decoder_blocks', 'encoder_blocks') or a list
+            epochs     number of epochs of the stage, None = until config.max_epoch
+            lr_factor  from this stage on, the learning rates are set to lr_factor x their initial values
         """
         schedule = getattr(config, 'unfreeze_schedule', None)
         if not schedule:
@@ -327,19 +332,28 @@ class ModelTrainer:
         for p in net.parameters():
             p.requires_grad = False
 
+        base_lrs = [group['lr'] for group in self.optimizer.param_groups]
         stage_end = 0
         finished = True
-        for part, n_epochs in schedule:
-            for p in getattr(net, part).parameters():
-                p.requires_grad = True
+        for stage in schedule:
+            parts, n_epochs = stage[0], stage[1]
+            lr_factor = stage[2] if len(stage) > 2 else None
+            parts = [parts] if isinstance(parts, str) else list(parts)
+            for part in parts:
+                for p in getattr(net, part).parameters():
+                    p.requires_grad = True
             stage_end = max_epoch if n_epochs is None else min(stage_end + n_epochs, max_epoch)
+            if lr_factor is not None:
+                for group, base_lr in zip(self.optimizer.param_groups, base_lrs):
+                    group['lr'] = base_lr * lr_factor
 
             # Stage already done in a previous (resumed) run
             if self.epoch >= stage_end:
                 continue
 
             n_trainable = sum(p.numel() for p in net.parameters() if p.requires_grad)
-            print(f"Unfreeze stage '{part}': epochs {self.epoch} -> {stage_end} ({n_trainable} trainable parameters)")
+            print(f"Unfreeze stage {parts}: epochs {self.epoch} -> {stage_end} ({n_trainable} trainable parameters"
+                  f"{f', lr x{lr_factor}' if lr_factor is not None else ''})")
             config.max_epoch = stage_end
             finished = self.train(net, training_loader, val_loader, config)
             if not finished:
