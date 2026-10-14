@@ -35,7 +35,7 @@ def test_same_result_as_the_original(seed):
     in_cloud = pandas.DataFrame(np.c_[sub, labels], columns=['x', 'y', 'z', 'pred']).astype({'pred': int})
     out_cloud = pandas.DataFrame(full, columns=['x', 'y', 'z'])
     expected = original_knn_voting(in_cloud, out_cloud, 'pred', tree)
-    np.testing.assert_array_equal(knn_voting(tree, labels, full, knn=5), expected)
+    np.testing.assert_array_equal(knn_voting(sub, labels, full, knn=5), expected)
 
 
 def test_chunks_and_sparse_labels():
@@ -43,9 +43,8 @@ def test_chunks_and_sparse_labels():
     sub = rng.uniform(0, 10, (2000, 3))
     labels = rng.choice([3, 17, 250], 2000)  # sparse label values
     full = rng.uniform(0, 10, (3000, 3))
-    tree = cKDTree(sub)
-    a = knn_voting(tree, labels, full, chunk=10_000)
-    b = knn_voting(tree, labels, full, chunk=7)
+    a = knn_voting(sub, labels, full, chunk=10_000)
+    b = knn_voting(sub, labels, full, chunk=7)
     np.testing.assert_array_equal(a, b)
     assert set(np.unique(a)) <= {3, 17, 250}
 
@@ -55,4 +54,4 @@ def test_exact_points_keep_their_label():
     sub = rng.uniform(0, 100, (500, 3))
     labels = rng.integers(0, 5, 500)
     # Isolated points: the nearest neighbour (distance 0) dominates the vote
-    np.testing.assert_array_equal(knn_voting(cKDTree(sub), labels, sub, knn=3), labels)
+    np.testing.assert_array_equal(knn_voting(sub, labels, sub, knn=3), labels)

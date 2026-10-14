@@ -100,7 +100,7 @@ class Predictor:
         io_options = IOOptions.do_nothing()
         io_options.binary = True
         ply_writer(cloud_path, subsampled, io_options)
-        return cloud_path, subsampled, search_tree, features, labels
+        return cloud_path, subsampled, features, labels
 
     def infer(self, test_loader, dataset, subsampled, inference_path):
 
@@ -207,7 +207,7 @@ class Predictor:
 
         if not inference_path.exists():
             # subsample
-            subsampled_path, subsampled, subtree, features, labels = self.subsample(pointcloud=local_cloud, tree_path=tree_path, cache_name=cache_name)
+            subsampled_path, subsampled, features, labels = self.subsample(pointcloud=local_cloud, tree_path=tree_path, cache_name=cache_name)
 
             # Setup Dataset
             tree_folder.mkdir(parents=True, exist_ok=True)
@@ -234,13 +234,11 @@ class Predictor:
         else:
             logger.info(f"Predictions found: {inference_path.name}")
             prediction = read_ply(inference_path)
-            with open(tree_path, 'rb') as f:
-                subtree = pickle.load(f)
 
         logger.info(f"Big play with {len(prediction)} of points")
 
         logger.info("Transferring the labels to the full cloud")
-        pointcloud[self.selected_property] = knn_voting(subtree, prediction[self.selected_property].to_numpy(),
+        pointcloud[self.selected_property] = knn_voting(prediction[["x", "y", "z"]].to_numpy(), prediction[self.selected_property].to_numpy(),
                                                         full_xyz - offset, knn=5)
         # print(f"in seconds: {t2 -t1}")
         logger.info("PointCloud ready")
