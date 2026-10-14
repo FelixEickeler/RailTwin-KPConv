@@ -26,6 +26,7 @@ from utils.metrics import IoU_from_confusions, fast_confusion
 from utils.ply import write_ply
 from torch.utils.tensorboard import SummaryWriter
 from utils.plot_cm import get_confusion_matrix, get_overview
+from utils.run_overview import describe_start, log_run_overview
 
 
 class ModelTrainer:
@@ -42,6 +43,10 @@ class ModelTrainer:
 
         self.tb_writer = SummaryWriter(tb_logdir)
         self.tb_logdir = Path(tb_logdir)
+        # Run overview for TensorBoard (HPARAMS / TEXT tab), written once at the start of train()
+        self.start = describe_start(chkp_path, finetune)
+        self.overview_logged = False
+        self.best_mIoU = -np.inf
         ############
         # Parameters
         ############
@@ -152,6 +157,10 @@ class ModelTrainer:
         t = [time.time()]
         last_display = time.time()
         mean_dt = np.zeros(1)
+
+        if not self.overview_logged:
+            log_run_overview(self.tb_writer, config, net, training_loader.dataset, self.start)
+            self.overview_logged = True
 
         # Start training loop
         print(f"Staring training with: \n\tlr_decay: {config.lr_decays.get(1)} \n\tcurrent_epoch: {self.epoch}\n\tmax_epoch: {config.max_epoch}")
@@ -769,7 +778,9 @@ class ModelTrainer:
         worst_IoU = IoUs[worst_Class]
         worst5_IoU = np.sort(IoUs)[:min(5, len(IoUs))]
 
+        self.best_mIoU = max(self.best_mIoU, mIoU)
         self.tb_writer.add_scalar("Test/mIoU", mIoU, self.epoch)
+        self.tb_writer.add_scalar("Test/mIoU_best", self.best_mIoU, self.epoch)
         self.tb_writer.add_scalar("Test/Accuracy", acc.mean(), self.epoch)
         self.tb_writer.add_scalar("Test/Loss", output_loss + reg_loss, self.epoch)
         self.tb_writer.add_scalar("Test/IoU_worst", worst_IoU, self.epoch)

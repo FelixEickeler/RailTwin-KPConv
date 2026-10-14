@@ -128,6 +128,7 @@ To switch the dataset or split, change the `import ... as RailTwinDatasetECPPM20
 
 | File | Purpose |
 |---|---|
+| `utils/run_overview.py` | Run overview in TensorBoard, written at the start of training. **HPARAMS tab:** one row per run with data (dataset, path, `first_subsampling_dl`, `in_radius`), inputs, trained / ignored classes, model (layers, deformable, feature dim, kernel points, parameters), training (start: scratch / finetune / resume, batch, LR, loss, class balancing, unfreeze schedule) and augmentation, next to mIoU, best mIoU, worst IoU, accuracy, loss and the IoU of every class. **TEXT tab** (`Run/Overview`): classes with their number and share of training points, all settings, the architecture and the full configuration. Point TensorBoard at the folder with all runs (the work dir) to compare them; runs from before this change have no row. |
 | `utils/plot_cm.py` | Confusion matrix and per-class overview as Plotly/Matplotlib figures and image arrays (for TensorBoard). |
 | `utils/debug_tools.py` | Lists live CUDA tensors and their sizes. |
 | `log_mem.py` | Background thread that logs GPU memory (`nvidia-smi`) into a pandas frame. |
