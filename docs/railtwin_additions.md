@@ -95,7 +95,7 @@ To switch the dataset or split, change the `import ... as RailTwinDatasetECPPM20
 | File | Purpose |
 |---|---|
 | `new_config.py` | Reworked `Config` base class (JSON-aware save and load). |
-| `config_railtwin.py` | `RailTwinConfig`: KPFCNN, 15 kernel points, `in_radius` 8.9 m, `first_subsampling_dl` 0.04 m, `in_features_dim` 2, LR 1.2e-2, 350 epochs, `augment_rotation='pendulum'`, batch 11/6. |
+| `config_railtwin.py` | `RailTwinConfig`: KPFCNN, 15 kernel points, `in_radius` 8.9 m, `first_subsampling_dl` 0.04 m, `in_features_dim` 2, LR 1.2e-2, 350 epochs, `augment_rotation='pendulum'`, batch 6/6. |
 | `config_railtwin_tl.py` | Transfer-learning variant: `in_radius` 8.5, LR 0.8e-2, checkpoint gap 25, batch 3/3, `dataset_task='cloud_segmentation'`. |
 
 ### 2.4 Training and testing
@@ -105,7 +105,7 @@ To switch the dataset or split, change the `import ... as RailTwinDatasetECPPM20
 | `train_railtwin.py` | Generic RailTwin training (uses `datasets.RailTwin_static`, see §3). |
 | `train_rtib3+.py` | Trains from scratch on RTIB3+ (16 classes). Arguments: working path, previous training, `fine_tune`, GPU id. |
 | `train_rtib3+_tl.py` | Transfer learning on `rtib3p_16classes_add_3`. `--pretrained <run\|chkp>` loads weights only (layers whose shape changed, e.g. `head_softmax`, stay initialised) and starts at epoch 0. `-ptp` resumes a run. Training follows `unfreeze_schedule` in `utils/config_railtwin_tl.py`: head_softmax → head_mlp → decoder → encoder (gradual unfreezing). |
-| `utils/trainer_railtwin.py` | `ModelTrainer` with `train_with_unfreeze_schedule()`, TensorBoard logging (`SummaryWriter`, confusion-matrix images through `utils/plot_cm.py`). Can fine-tune from a checkpoint or resume a run (`finetune`, `continue_epoch`). |
+| `utils/trainer_railtwin.py` | `ModelTrainer` with `train_with_unfreeze_schedule()`, TensorBoard logging (`SummaryWriter`, confusion-matrix images through `utils/plot_cm.py`). Can fine-tune from a checkpoint or resume a run (`finetune`, `continue_epoch`). Checkpoints are found by `utils/checkpoints.py` (newest `*.tar` of a run folder, usually `current_chkp.tar`), the same rule for resuming, fine-tuning and prediction. |
 | `test_models.py` | Argparse CLI (`log_dir`, `model_path`, `out_dir`, `val`, `dataset_overwrite`). Supports the datasets `rtib+`, `RailTwin` and `-rtib`. |
 | `test_railtwin.py` | Inference CLI: `-m` model, `-i` input file or folder, `-o` output, `-gid` GPU. Reads clouds through `railtwin_common` IO. |
 | `utils/predictor.py` | `Predictor`: subsamples, runs KPFCNN over `InferenceDataset`, and maps predictions back to the full cloud with `KnnVoting`. Writes PLY files with `railtwin_common`. |
@@ -118,7 +118,7 @@ To switch the dataset or split, change the `import ... as RailTwinDatasetECPPM20
 | `balance_classes = True` | both RailTwin configs, train scripts | Training spheres are centred per class instead of by potentials (the KPConv author's recommendation for rare classes). Validation keeps potentials. Classes without points are skipped instead of hanging the sampler. |
 | `-r / --in-radius` | `train_rtib3+.py`, `train_rtib3+_tl.py` | Overrides the sphere radius for experiments (e.g. 2.5 / 4 / 6 m vs 8.9 m). It is saved to `parameters.json`, so prediction uses the same value. |
 | `augment_mix3d = 0.3` | `datasets/mixing.py`, both RailTwin configs | Mix3D: two training spheres of a batch are overlaid into one sample (out-of-context augmentation, +0.7–1.5 mIoU measured with KPConv). Paused during the batch calibration, training only, 0 = off. |
-| `--schedule real` | `train_rtib3+_tl.py`, `unfreeze_schedule_real` | Fine-tuning on real data: 2 epochs head warm-up, then the whole network at 0.1× learning rate. `--schedule gradual` (default) keeps the layer-by-layer unfreezing. Stages may list several parts and an optional learning rate factor. |
+| `--schedule real` | `train_rtib3+_tl.py`, `unfreeze_schedule_real` | Fine-tuning on real data: 2 epochs head warm-up, then the whole network at 0.1× learning rate. `--schedule gradual` (default) keeps the layer-by-layer unfreezing. Stages may list several parts and an optional learning rate factor (relative to `learning_rate` with the decays so far, also after a resume). |
 
 ### 2.5 Utilities
 

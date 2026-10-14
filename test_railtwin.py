@@ -19,6 +19,7 @@ from railtwin_common.common.io.writer.ply import ply_writer
 from railtwin_common.common.logger import RailTwinLogger
 from utils.config_railtwin import RailTwinConfig as Config
 from utils.predictor import Predictor
+from utils.checkpoints import find_checkpoint
 
 logger = RailTwinLogger.create()
 
@@ -51,23 +52,12 @@ def check_gpu_memory(gpu_id):
 
 
 def resolve_model(model):
-    """
-    Checkpoint and parameters.json of a model given as run folder, checkpoints folder or .tar file.
-    Newest chkp_*.tar wins, current_chkp.tar is the fallback.
-    """
-    model = Path(model).expanduser()
-    if model.is_file():
-        model_path = model.resolve()
-        folders = [model.parent, model.parent.parent]
-    else:
-        candidates = [model, model / 'checkpoints']
-        chkps = sorted([c for d in candidates for c in d.glob('chkp_*.tar')], key=os.path.getmtime)
-        if not chkps:
-            chkps = [c for d in candidates for c in d.glob('current_chkp.tar')]
-        if not chkps:
-            raise FileNotFoundError(f"No checkpoint (chkp_*.tar / current_chkp.tar) found in {model}")
-        model_path = chkps[-1].resolve()
-        folders = [model, model.parent]
+    """Checkpoint (see utils/checkpoints.py) and parameters.json of a model given as run folder, checkpoints folder
+    or .tar file."""
+    model_path = find_checkpoint(model)
+    if model_path is None:
+        raise FileNotFoundError(f"No checkpoint (*.tar) found in {model}")
+    folders = [model_path.parent, model_path.parent.parent]
     cfg_path = next((f / 'parameters.json' for f in folders if (f / 'parameters.json').exists()), None)
     if cfg_path is None:
         raise FileNotFoundError(f"No parameters.json found next to {model}")

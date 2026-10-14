@@ -1156,6 +1156,9 @@ class RTIB3pSampler(Sampler):
         print('\nStarting Calibration (use verbose=True for more details)')
         t0 = time.time()
 
+        # No Mix3D while calibrating: the calibration counts spheres per batch (see PointCloudDataset.mix3d)
+        self.dataset.calibrating = True
+
         redo = force_redo
 
         # Batch limit
@@ -1289,10 +1292,6 @@ class RTIB3pSampler(Sampler):
             error_D = 0
             last_error = 0
 
-            debug_in = []
-            debug_out = []
-            debug_b = []
-            debug_estim_b = []
 
             #####################
             # Perform calibration
@@ -1363,36 +1362,14 @@ class RTIB3pSampler(Sampler):
                                              int(self.dataset.batch_limit),
                                              break_condition))
 
-
-                    # Debug plots
-                    debug_in.append(int(batch.points[0].shape[0]))
-                    debug_out.append(int(self.dataset.batch_limit))
-                    debug_b.append(b)
-                    debug_estim_b.append(estim_b)
-
                 if breaking:
                     break
 
-            # Plot in case we did not reach convergence
+            # No convergence: stop with a clear error (the original code showed debug plots and divided by zero)
             if not breaking:
-                import matplotlib.pyplot as plt
-
-                print(
-                    "ERROR: It seems that the calibration have not reached convergence. Here are some plot to understand why:")
-                print("If you notice unstability, reduce the expected_N value")
-                print("If convergece is too slow, increase the expected_N value")
-
-                plt.figure()
-                plt.plot(debug_in)
-                plt.plot(debug_out)
-
-                plt.figure()
-                plt.plot(debug_b)
-                plt.plot(debug_estim_b)
-
-                plt.show()
-
-                a = 1 / 0
+                raise RuntimeError(f"Batch calibration did not converge (target {target_b} spheres per batch, last "
+                                   f"estimate {estim_b:.2f}, batch_limit {int(self.dataset.batch_limit)}). If it is "
+                                   f"unstable, reduce config.expected_N, if it is too slow, increase it.")
 
             # Use collected neighbor histogram to get neighbors limit
             cumsum = np.cumsum(neighb_hists.T, axis=0)
@@ -1453,6 +1430,7 @@ class RTIB3pSampler(Sampler):
             with open(neighb_lim_file, 'wb') as file:
                 pickle.dump(neighb_lim_dict, file)
 
+        self.dataset.calibrating = False
         print('Calibration done in {:.1f}s\n'.format(time.time() - t0))
         return
 

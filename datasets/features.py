@@ -27,7 +27,7 @@ LEGACY_FEATURES = ['above_ground', 'intensity', 'height']
 
 def feature_names(config):
     """Names of the input features (without the constant 1)."""
-    names = getattr(config, 'input_features', None)
+    names = config.input_features
     if names is None:
         names = LEGACY_FEATURES[:max(int(config.in_features_dim) - 1, 0)]
     names = list(names)
@@ -60,7 +60,7 @@ def select_features(columns, config, training=False):
     point_fields = [i for i, name in enumerate(names) if name != 'height']
     if training and np.random.rand() > config.augment_color:
         features[:, point_fields] = 0
-    if getattr(config, 'drop_features', False):
+    if config.drop_features:
         # Model trained with features, applied to data without them
         features[:, point_fields] = 0
     return features

@@ -215,6 +215,9 @@ class PointCloudDataset(Dataset):
         """
 
         self.name = name
+        self.set = None
+        self.calibrating = False    # set by the sampler calibration (no Mix3D while calibrating)
+        self.als_versions = None    # prepared ALS versions (prepare_als)
         self.path = ''
         self.label_to_names = {}
         self.num_classes = 0
@@ -255,12 +258,11 @@ class PointCloudDataset(Dataset):
         batch are overlaid into one sample. Only for training, and paused while the batch sizes are calibrated
         (self.calibrating), because the calibration counts spheres per batch.
         """
-        prob = getattr(self.config, 'augment_mix3d', 0.0) or 0.0
         lists = (p_list, f_list, l_list, i_list, pi_list, ci_list, s_list, R_list)
-        if prob <= 0 or getattr(self, 'set', None) != 'training' or getattr(self, 'calibrating', False):
+        if self.set != 'training' or self.calibrating or not self.config.augment_mix3d:
             return lists
         keys = ('points', 'features', 'labels', 'point_inds', 'input_inds', 'cloud_inds', 'scales', 'rots')
-        merged = mix_spheres(dict(zip(keys, lists)), prob)
+        merged = mix_spheres(dict(zip(keys, lists)), self.config.augment_mix3d)
         return tuple(merged[key] for key in keys)
 
     def point_features(self, colors, input_points, center_point, names=('above_ground', 'intensity')):
@@ -273,13 +275,13 @@ class PointCloudDataset(Dataset):
         """
         if names is None:
             # Prediction: columns named by config.features[3:]. Old configs (no input_features) used them by position.
-            if getattr(self.config, 'input_features', None) is None:
+            if self.config.input_features is None:
                 names = LEGACY_FEATURES[:colors.shape[1]]
             else:
                 names = list(self.config.features[3:])
         columns = {name: colors[:, i] for i, name in enumerate(names) if i < colors.shape[1]}
         columns['height'] = input_points[:, 2] + np.ravel(center_point)[2]
-        return select_features(columns, self.config, training=getattr(self, 'set', None) == 'training')
+        return select_features(columns, self.config, training=self.set == 'training')
 
     def stack_input_features(self, stacked_points, features):
         """Network input features [1, features] of a batch, checked against config.in_features_dim."""
@@ -292,9 +294,7 @@ class PointCloudDataset(Dataset):
         cloud (see utils/als_simulation.py). Stored as bit masks, cached in work_dir/input_<dl>/als.
         """
         self.als_versions = None
-        if getattr(self, 'set', None) != 'training' or not (getattr(self.config, 'augment_als', 0.0) or 0.0) > 0:
-            return
-        if getattr(self.config, 'augment_als_mode', 'prepared') != 'prepared':
+        if self.set != 'training' or not self.config.augment_als or self.config.augment_als_mode != 'prepared':
             return
 
         import hashlib
@@ -329,11 +329,11 @@ class PointCloudDataset(Dataset):
         :param center_point: centre of the input sphere
         :return: bool[M] mask of the points to keep, or None to keep all
         """
-        if getattr(self, 'set', None) != 'training':
+        if self.set != 'training':
             return None
-        if getattr(self.config, 'augment_als_mode', 'prepared') == 'online':
+        if self.config.augment_als_mode == 'online':
             return als_augmentation(points[input_inds], self.config, center=np.ravel(center_point)[:2])
-        versions = getattr(self, 'als_versions', None)
+        versions = self.als_versions
         return prepared_als_mask(versions[cloud_ind] if versions else None, input_inds, self.config)
 
     def augmentation_transform(self, points, normals=None, verbose=False):
@@ -347,11 +347,9 @@ class PointCloudDataset(Dataset):
         R = np.eye(points.shape[1])
 
         if points.shape[1] == 3:
-            R = random_rotation(self.config.augment_rotation,
-                                pendulum_yaw=(self.config.augment_rotation_yaw / 360
-                                              if getattr(self.config, 'augment_rotation_yaw', None) is not None
-                                              else None),
-                                max_tilt=getattr(self.config, 'augment_rotation_max_tilt', 10.0))
+            yaw = self.config.augment_rotation_yaw
+            R = random_rotation(self.config.augment_rotation, pendulum_yaw=None if yaw is None else yaw / 360,
+                                max_tilt=self.config.augment_rotation_max_tilt)
 
         R = R.astype(np.float32)
 

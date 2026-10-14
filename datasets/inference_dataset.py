@@ -889,10 +889,6 @@ class InferenceSampler(Sampler):
             error_D = 0
             last_error = 0
 
-            debug_in = []
-            debug_out = []
-            debug_b = []
-            debug_estim_b = []
 
             #####################
             # Perform calibration
@@ -965,10 +961,6 @@ class InferenceSampler(Sampler):
 
 
                     # Debug plots
-                    debug_in.append(int(batch.points[0].shape[0]))
-                    debug_out.append(int(self.dataset.batch_limit))
-                    debug_b.append(b)
-                    debug_estim_b.append(estim_b)
                     # self.dataset.config.expected_N = estim_b
 
                 if breaking:

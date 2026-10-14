@@ -150,6 +150,19 @@ class Config:
     augment_occlusion_ratio = 0.2
     augment_occlusion_num = 1
 
+    # RailTwin additions, off by default (see docs/railtwin_additions.md and utils/config_railtwin.py)
+    input_features = None                 # names of the input features, None = by in_features_dim
+    drop_features = False                 # randomly drop input features during training
+    augment_rotation_max_tilt = 10.0      # 'pendulum' rotation: swing in degrees
+    augment_rotation_yaw = None           # 'pendulum_legacy' rotation
+    augment_mix3d = 0.0                   # Mix3D probability
+    augment_als = 0.0                     # ALS emulation probability
+    augment_als_mode = 'prepared'
+    segmentation_loss = {'cross_entropy': 1.0}
+    label_smoothing = 0.0
+    balance_classes = False               # class-balanced sphere centres instead of potentials
+    unfreeze_schedule = None              # fine-tuning stages (utils/trainer_railtwin.py)
+
     # Regularization loss importance
     weight_decay = 1e-3
 

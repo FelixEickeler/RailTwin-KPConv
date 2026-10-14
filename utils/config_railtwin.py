@@ -108,12 +108,11 @@ class RailTwinConfig(Config):
     # Aggregation function of KPConv in ('closest', 'sum')
     aggregation_mode = 'sum'
 
-    # Choice of input features (datasets/features.py): network input = [1, input_features], so
-    # in_features_dim = 1 + len(input_features). Names: 'above_ground', 'intensity', 'height' (absolute z).
-    # [] = geometry only.
+    # Choice of input features (datasets/features.py): network input = [1, input_features].
+    # Names: 'above_ground', 'intensity', 'height' (absolute z). [] = geometry only.
     first_features_dim = 128
     input_features = ['above_ground']
-    in_features_dim = 2
+    in_features_dim = 1 + len(input_features)
     drop_features = False                   # zero the input features of every point (data without them)
 
     # Prediction (utils/predictor.py): point fields read from the clouds (x, y, z first, then the input feature

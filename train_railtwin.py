@@ -112,7 +112,7 @@ def train_railtwin(working_dir, previous_training_path=Path(''), config_path=Pat
     # Initialize datasets
     # Class-balanced training spheres (config.balance_classes) instead of potentials; validation keeps potentials
     training_dataset = RailTwinDatasetECPPM2022(config, set='training',
-                                                use_potentials=not getattr(config, 'balance_classes', False))
+                                                use_potentials=not config.balance_classes)
     test_dataset = RailTwinDatasetECPPM2022(config, set='validation', use_potentials=True)
     # test_dataset = RailTwinDatasetECPPM2022(config, set='test', use_potentials=True)
 
@@ -137,10 +137,7 @@ def train_railtwin(working_dir, previous_training_path=Path(''), config_path=Pat
     # Calibrate samplers
     untouched_ratio = config.untouched_ratio
 
-    # No Mix3D while calibrating: the calibration counts spheres per batch
-    training_dataset.calibrating = True
     training_sampler.calibration(training_loader, untouched_ratio=untouched_ratio, verbose=True)
-    training_dataset.calibrating = False
     test_sampler.calibration(test_loader, untouched_ratio=untouched_ratio, verbose=True)
 
     # Optional debug functions

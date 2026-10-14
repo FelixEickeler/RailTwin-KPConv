@@ -68,7 +68,7 @@ class SegmentationLoss(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        weights = getattr(config, 'segmentation_loss', None) or {'cross_entropy': 1.0}
+        weights = config.segmentation_loss
         unknown = set(weights) - set(self.TERMS)
         if unknown:
             raise ValueError(f'Unknown loss terms {sorted(unknown)}, available: {list(self.TERMS)}')
@@ -76,11 +76,8 @@ class SegmentationLoss(nn.Module):
         if not self.weights:
             raise ValueError('segmentation_loss needs at least one term with a non-zero weight')
 
-        class_w = getattr(config, 'class_w', None)
-        weight = torch.tensor(class_w, dtype=torch.float32) if class_w is not None and len(class_w) > 0 else None
-        self.cross_entropy = nn.CrossEntropyLoss(weight=weight, ignore_index=-1,
-                                                 label_smoothing=float(getattr(config, 'label_smoothing', 0.0)))
-        self.terms = {}
+        weight = torch.tensor(config.class_w, dtype=torch.float32) if len(config.class_w) > 0 else None
+        self.cross_entropy = nn.CrossEntropyLoss(weight=weight, ignore_index=-1, label_smoothing=config.label_smoothing)
 
     def forward(self, outputs, target):
         """
@@ -88,12 +85,9 @@ class SegmentationLoss(nn.Module):
         :param target: int[1, N] class indices, -1 = ignored
         """
         total = 0.0
-        self.terms = {}
         if 'cross_entropy' in self.weights:
-            self.terms['cross_entropy'] = self.cross_entropy(outputs, target)
+            total = total + self.weights['cross_entropy'] * self.cross_entropy(outputs, target)
         if 'lovasz' in self.weights:
             probas = torch.softmax(outputs[0].transpose(0, 1), dim=1)
-            self.terms['lovasz'] = lovasz_softmax(probas, target[0], ignore_index=-1)
-        for name, value in self.terms.items():
-            total = total + self.weights[name] * value
+            total = total + self.weights['lovasz'] * lovasz_softmax(probas, target[0], ignore_index=-1)
         return total

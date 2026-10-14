@@ -12,7 +12,7 @@ from models.losses import SegmentationLoss, lovasz_softmax  # noqa: E402
 
 
 def cfg(**kwargs):
-    defaults = dict(class_w=[])
+    defaults = dict(class_w=[], segmentation_loss={'cross_entropy': 1.0}, label_smoothing=0.0)
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
 
@@ -69,7 +69,9 @@ def test_combined_loss_and_gradient():
     logits.requires_grad_(True)
     loss_fn = SegmentationLoss(cfg(segmentation_loss={'cross_entropy': 1.0, 'lovasz': 0.5}))
     loss = loss_fn(logits, target)
-    expected = loss_fn.terms['cross_entropy'] + 0.5 * loss_fn.terms['lovasz']
+    probas = torch.softmax(logits[0].transpose(0, 1), dim=1)
+    expected = (torch.nn.CrossEntropyLoss(ignore_index=-1)(logits, target)
+                + 0.5 * lovasz_softmax(probas, target[0], ignore_index=-1))
     assert torch.allclose(loss, expected)
     loss.backward()
     assert logits.grad is not None and torch.isfinite(logits.grad).all()
@@ -87,7 +89,7 @@ def test_label_smoothing_is_used():
 def test_lovasz_only_and_all_ignored():
     logits, target = batch()
     loss_fn = SegmentationLoss(cfg(segmentation_loss={'lovasz': 1.0}))
-    assert set(loss_fn.terms) == set() and loss_fn(logits, target) > 0
+    assert loss_fn(logits, target) > 0
     assert loss_fn(logits, torch.full_like(target, -1)).item() == 0.0
 
 

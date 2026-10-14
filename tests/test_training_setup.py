@@ -100,13 +100,13 @@ class FakeTrainer:
 
 
 def schedule_method():
-    return load_method('utils/trainer_railtwin.py', 'ModelTrainer', 'train_with_unfreeze_schedule', {})
+    return load_method('utils/trainer_railtwin.py', 'ModelTrainer', 'train_with_unfreeze_schedule', {'np': np})
 
 
 def test_gradual_schedule():
     net = Net()
     trainer = FakeTrainer(net)
-    config = SimpleNamespace(max_epoch=60, unfreeze_schedule=[['head_softmax', 11], ['head_mlp', 20],
+    config = SimpleNamespace(max_epoch=60, learning_rate=0.01, deform_lr_factor=0.1, lr_decays={}, unfreeze_schedule=[['head_softmax', 11], ['head_mlp', 20],
                                                               ['decoder_blocks', 20], ['encoder_blocks', None]])
     assert schedule_method()(trainer, net, None, None, config)
     assert [(a, b) for a, b, _, _ in trainer.log] == [(0, 11), (11, 31), (31, 51), (51, 60)]
@@ -118,7 +118,8 @@ def test_gradual_schedule():
 def test_real_schedule_with_parts_and_lr_factor():
     net = Net()
     trainer = FakeTrainer(net, lr=0.008)
-    config = SimpleNamespace(max_epoch=100, unfreeze_schedule=[
+    config = SimpleNamespace(max_epoch=100, learning_rate=0.008, deform_lr_factor=0.1, lr_decays={},
+                             unfreeze_schedule=[
         ['head_softmax', 2],
         [['head_mlp', 'decoder_blocks', 'encoder_blocks'], None, 0.1]])
     schedule_method()(trainer, net, None, None, config)
@@ -130,10 +131,14 @@ def test_real_schedule_with_parts_and_lr_factor():
 
 def test_resume_skips_finished_stages():
     net = Net()
-    trainer = FakeTrainer(net, epoch=40)
-    config = SimpleNamespace(max_epoch=100, unfreeze_schedule=[
-        ['head_softmax', 2], [['head_mlp', 'decoder_blocks', 'encoder_blocks'], None, 0.1]])
+    # Resumed optimizer: its learning rate already contains the decays and the factor of the earlier run
+    trainer = FakeTrainer(net, epoch=40, lr=1e-5)
+    decays = {i: 0.9 for i in range(1, 100)}
+    config = SimpleNamespace(max_epoch=100, learning_rate=0.01, deform_lr_factor=0.1, lr_decays=decays,
+                             unfreeze_schedule=[['head_softmax', 2],
+                                                [['head_mlp', 'decoder_blocks', 'encoder_blocks'], None, 0.1]])
     schedule_method()(trainer, net, None, None, config)
     assert len(trainer.log) == 1
     epoch, _, parts, lr = trainer.log[0]
-    assert epoch == 40 and len(parts) == 4 and lr == pytest.approx(0.001)
+    # Initial rate x decays of epochs 1..39 x stage factor, not 1e-5 x 0.1
+    assert epoch == 40 and len(parts) == 4 and lr == pytest.approx(0.01 * 0.9 ** 39 * 0.1)

@@ -67,6 +67,19 @@ class Config:
     augment_occlusion_ratio = 0.2               # Augment with occlusions (not implemented yet)
     augment_occlusion_num = 1                   # Augment with occlusions (not implemented yet)
 
+    # RailTwin additions, off by default (values and explanations in utils/config_railtwin.py)
+    input_features = None
+    drop_features = False
+    augment_rotation_max_tilt = 10.0
+    augment_rotation_yaw = None
+    augment_mix3d = 0.0
+    augment_als = 0.0
+    augment_als_mode = 'prepared'
+    segmentation_loss = {'cross_entropy': 1.0}
+    label_smoothing = 0.0
+    balance_classes = False
+    unfreeze_schedule = None
+
     weight_decay = 1e-3                         # Regularization loss importance
     class_w = []                                # Choose weights for class (used in segmentation loss). Empty list for no weights
 

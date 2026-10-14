@@ -42,19 +42,10 @@ from datasets.rtib3p import RTIB3pSampler as RailTwinSampler
 from datasets.rtib3p import RTIB3pCollate as RailTwinCollate
 from utils.trainer_railtwin import ModelTrainer
 from utils.config_railtwin_tl import RailTwinConfig
+from utils.checkpoints import find_checkpoint
 
 
 # from train_S3DIS import S3DISConfig as RailTwinConfig
-
-
-def find_checkpoint(path):
-    """Return the checkpoint file itself, or the newest *.tar in a run folder (or its checkpoints/ subfolder)."""
-    path = Path(path)
-    if path.is_file():
-        return path.resolve()
-    chkp_dir = path / 'checkpoints' if (path / 'checkpoints').is_dir() else path
-    chkps = sorted(chkp_dir.glob('*.tar'), key=os.path.getmtime)
-    return chkps[-1].resolve() if chkps else None
 
 
 def train_railtwin(working_path, previous_training_path=Path(''), pretrained_path=None, gid=None, overrides=None):
@@ -134,15 +125,14 @@ def train_railtwin(working_path, previous_training_path=Path(''), pretrained_pat
         config.saving_path = str(working_path)
 
     # Command line overrides (e.g. --in-radius for sphere size experiments). Set on the class, because
-    # config.save() writes the class attributes to parameters.json (prediction reads them from there).
     for key, value in (overrides or {}).items():
         print(f"Config override: {key} = {value}")
-        setattr(type(config), key, value)
+        setattr(config, key, value)
 
     # Initialize datasets
     # Class-balanced training spheres (config.balance_classes) instead of potentials; validation keeps potentials
     training_dataset = RailTwinDatasetECPPM2022(config, set='training',
-                                                use_potentials=not getattr(config, 'balance_classes', False))
+                                                use_potentials=not config.balance_classes)
     test_dataset = RailTwinDatasetECPPM2022(config, set='validation', use_potentials=True)
     # test_dataset = RailTwinDatasetECPPM2022(config, set='test', use_potentials=True)
 
@@ -166,10 +156,7 @@ def train_railtwin(working_path, previous_training_path=Path(''), pretrained_pat
 
     # Calibrate samplers
     untouched_ratio = config.untouched_ratio
-    # No Mix3D while calibrating: the calibration counts spheres per batch
-    training_dataset.calibrating = True
     training_sampler.calibration(training_loader, untouched_ratio=untouched_ratio, verbose=True)
-    training_dataset.calibrating = False
     test_sampler.calibration(test_loader, untouched_ratio=untouched_ratio, verbose=True)
 
     # Optional debug functions

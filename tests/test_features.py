@@ -17,7 +17,7 @@ def columns():
 
 
 def cfg(**kwargs):
-    defaults = dict(in_features_dim=2, augment_color=0.8)
+    defaults = dict(in_features_dim=2, augment_color=0.8, input_features=None, drop_features=False)
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
 

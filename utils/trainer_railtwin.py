@@ -322,9 +322,10 @@ class ModelTrainer:
         A stage is [parts, epochs] or [parts, epochs, lr_factor]:
             parts      one part name ('head_softmax', 'head_mlp', 'decoder_blocks', 'encoder_blocks') or a list
             epochs     number of epochs of the stage, None = until config.max_epoch
-            lr_factor  from this stage on, the learning rates are set to lr_factor x their initial values
+            lr_factor  from this stage on, the learning rates are lr_factor x their values without a factor
+                       (config.learning_rate with the lr_decays of the epochs so far)
         """
-        schedule = getattr(config, 'unfreeze_schedule', None)
+        schedule = config.unfreeze_schedule
         if not schedule:
             return self.train(net, training_loader, val_loader, config)
 
@@ -332,7 +333,9 @@ class ModelTrainer:
         for p in net.parameters():
             p.requires_grad = False
 
-        base_lrs = [group['lr'] for group in self.optimizer.param_groups]
+        # Initial learning rates (as in __init__), not the ones of the optimizer: after a resume those already
+        # contain the decays and the factor of an earlier stage
+        base_lrs = [config.learning_rate, config.learning_rate * config.deform_lr_factor]
         stage_end = 0
         finished = True
         for stage in schedule:
@@ -344,8 +347,9 @@ class ModelTrainer:
                     p.requires_grad = True
             stage_end = max_epoch if n_epochs is None else min(stage_end + n_epochs, max_epoch)
             if lr_factor is not None:
+                decay = np.prod([config.lr_decays[e] for e in range(self.epoch) if e in config.lr_decays])
                 for group, base_lr in zip(self.optimizer.param_groups, base_lrs):
-                    group['lr'] = base_lr * lr_factor
+                    group['lr'] = base_lr * decay * lr_factor
 
             # Stage already done in a previous (resumed) run
             if self.epoch >= stage_end:

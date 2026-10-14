@@ -91,10 +91,11 @@ class RTIB3p(PointCloudDataset):
         }
         to_ignore = ["ignored"]
 
-        # i think thats the only thing that does not carry over
-        self.config.labels = label_from_json
-        self.config.ignored_labels = to_ignore  #
-        self.config.dataset_name = self.name
+        # Both the caller's config (saved to parameters.json, read by the prediction) and the dataset's own copy
+        for cfg in (config, self.config):
+            cfg.labels = label_from_json
+            cfg.ignored_labels = to_ignore
+            cfg.dataset_name = self.name
 
         self.label_to_names = {value: key for key, value in label_from_json.items()}
         self.ignored_labels = [label_from_json[key] for key in to_ignore]
