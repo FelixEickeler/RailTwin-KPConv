@@ -48,8 +48,8 @@ def test_written_to_the_run_folder(tmp_path):
     log_run_overview(writer, config(), torch.nn.Linear(3, 2), fake_dataset())
     writer.close()
     events = EventAccumulator(str(tmp_path)).Reload()
-    assert set(events.PluginTagToContent("hparams")) == {"_hparams_/experiment", "_hparams_/session_start_info",
-                                                          "_hparams_/session_end_info"}
+    # No experiment summary (TensorBoard takes the columns from the scalars of all runs)
+    assert set(events.PluginTagToContent("hparams")) == {"_hparams_/session_start_info", "_hparams_/session_end_info"}
     assert "Run/Overview/text_summary" in events.Tags()["tensors"]
 
 

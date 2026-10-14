@@ -137,8 +137,11 @@ def log_run_overview(writer, config, net, dataset, start=""):
     hparam_dict = run_hparams(config, net, dataset, start, classes)
     # Metric columns: the overall metrics and the IoU of every trained class (all in percent)
     metrics = METRICS + [f"Test/IoU/{name}" for _, name, ignored, _ in classes if not ignored]
-    for summary in hparams(hparam_dict, {tag: 0.0 for tag in metrics}):
-        writer.file_writer.add_summary(summary)
+    # Only the session summaries, no experiment summary: TensorBoard then takes the metric columns from the scalars
+    # of all runs (with an experiment summary it shows only that run's columns, e.g. hides the evaluation runs)
+    _, session_start, session_end = hparams(hparam_dict, {tag: 0.0 for tag in metrics})
+    writer.file_writer.add_summary(session_start)
+    writer.file_writer.add_summary(session_end)
     writer.add_text("Run/Overview", overview_markdown(config, net, dataset, hparam_dict, classes), 0)
     writer.flush()
     return hparam_dict

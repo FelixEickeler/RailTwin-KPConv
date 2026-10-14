@@ -39,6 +39,8 @@ docker compose exec kpconv bash          # or: ssh -p 2244 point_warrior@<host>
 - The C++ wrappers are compiled on the first start.
 - TensorBoard runs on host port 6667 over all runs in the work folder. The HPARAMS tab compares runs (data, inputs,
   classes, model, training settings next to mIoU and per-class IoU), the TEXT tab has a `Run/Overview` per run.
+- Evaluate a model on labelled clouds: `python3 evaluate.py -m <run> -i <cloud or folder> -n <test set>`. Report in
+  `<run>/evaluation/<test set>/`, and a row with the `Eval/*` metrics in the HPARAMS tab.
 - PyCharm: SSH interpreter `point_warrior@<host>:2244`, `/usr/bin/python3`, path mapping
   `<repo> -> /home/point_warrior/railtwin_kpconv` (the repository is mounted, no upload needed on the same host).
 - The first build takes some time.
