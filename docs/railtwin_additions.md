@@ -64,6 +64,8 @@ The main differences from S3DIS:
 - Every `**/*.ply` file under `self.path` is a cloud. The train/validation split comes from the file name
   (e.g. `_quintile_3`, `_quintile_4` → validation).
 - Pre-processed data (subsampled clouds, KD-trees, projections) is cached in `self.work_dir`.
+  The cache is in `input_<first_subsampling_dl>/` (e.g. `input_0.020/`) and is rebuilt when files are missing.
+  The KD-trees are sklearn pickles: after a scikit-learn upgrade, delete that folder once.
 
 | File | Dataset / purpose |
 |---|---|
