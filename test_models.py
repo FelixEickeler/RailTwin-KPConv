@@ -36,7 +36,7 @@ from datasets.S3DIS import *
 from datasets.SensatUrban import *
 from datasets.SemanticKitti import *
 from datasets.Toronto3D import *
-from datasets.railtwin import RailTwinSampler, RailTwinCollate
+from datasets.railtwin import RailTwinDataset, RailTwinSampler, RailTwinCollate
 import importlib
 from torch.utils.data import DataLoader
 
@@ -145,14 +145,19 @@ if __name__ == '__main__':
     # Set GPU visible device
     os.environ['CUDA_VISIBLE_DEVICES'] = GPU_ID
 
-    # Initialize configuration class
-    config = Config()
-    config.load(str(log_dir))
+    # Initialize configuration class: RailTwin runs save parameters.json (with data paths and classes), upstream
+    # KPConv runs parameters.txt
+    if (log_dir / 'parameters.json').exists():
+        from utils.config_railtwin import RailTwinConfig
+        config = RailTwinConfig.load(log_dir / 'parameters.json')
+    else:
+        config = Config()
+        config.load(str(log_dir))
 
-    if dataset_overwrite != config.dataset and dataset_overwrite != "rtib+":
-        dataset_import = importlib.import_module(f'datasets.{dataset_overwrite}')
-        RTIB3p = dataset_import.RailTwinDataset
-        # RTIB3p = getattr(__import__(f"datasets.{dataset_overwrite}"), "*")
+    # RailTwin dataset class, or the RailTwinDataset of another module (-do <module in datasets/>)
+    RTIB3p = RailTwinDataset
+    if dataset_overwrite not in ("railtwin", "rtib+", config.dataset):
+        RTIB3p = importlib.import_module(f'datasets.{dataset_overwrite}').RailTwinDataset
 
     ##################################
     # Change model parameters for test

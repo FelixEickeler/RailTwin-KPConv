@@ -13,7 +13,8 @@
 #
 #      RailTwin addition. With config.label_mapping set, the clouds keep fine ids (column config.label_column) and
 #      are mapped to the training classes when a cloud is loaded, before the subsampling. The cache folder name holds
-#      the mappings, levels and a hash of the label table, so caches of different (or edited) mappings do not mix.
+#      the mappings, levels and a hash of the label table and column, so caches of different (or edited) mappings do
+#      not mix. The ALS versions (datasets/common.py) depend only on the points and stay in input_<dl>/als.
 #          label_mapping = 'obm_mapping.json'                    one mapping, classes of config.label_level
 #          label_mapping = [['input_mapping.json', 'consolidated'],  a chain: input ids -> consolidated components
 #                           ['obm_mapping.json', 'system']]          -> training classes
@@ -51,9 +52,10 @@ def read_labels(dataset, data):
 
 
 def cache_folder_name(dataset, dl):
-    """'input_0.040', with a label mapping e.g. 'input_0.040_obm_mapping_system_1a2b3c4d' (hash of the label table)."""
+    """'input_0.040', with a label mapping e.g. 'input_0.040_obm_mapping_system_1a2b3c4d' (hash of table and column)."""
     name = 'input_{:.3f}'.format(dl)
     if dataset.label_mapping is not None:
         table = dataset.label_mapping.lookup_table()
-        name += f"_{dataset.label_mapping.name}_{hashlib.sha1(table.tobytes()).hexdigest()[:8]}"
+        key = table.tobytes() + dataset.config.label_column.encode()
+        name += f"_{dataset.label_mapping.name}_{hashlib.sha1(key).hexdigest()[:8]}"
     return name

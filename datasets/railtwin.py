@@ -92,6 +92,7 @@ class RailTwinDataset(PointCloudDataset):
 
         self.path = Path(config.dataset_path)
         self.work_dir = Path(config.dataset_work_dir)
+        self.work_dir.mkdir(parents=True, exist_ok=True)
         self.dataset_task = 'cloud_segmentation'
 
         # Both the caller's config (network, trainer) and the dataset's own copy (sampler)
@@ -106,10 +107,18 @@ class RailTwinDataset(PointCloudDataset):
         self.use_potentials = use_potentials
 
         # Clouds (sorted, so the order does not depend on the file system) and the validation split
+        # (not below the work dir, which may lie inside dataset_path and holds the subsampled .ply of the cache)
+        work_dir = self.work_dir.resolve()
         full_path = sorted(ply for ply in self.path.glob("**/*.ply")
-                           if not any(pattern in ply.stem for pattern in config.exclude_patterns))
+                           if not any(pattern in ply.stem for pattern in config.exclude_patterns)
+                           and work_dir not in ply.resolve().parents)
         if not full_path:
             raise FileNotFoundError(f"No .ply clouds in {self.path} (config.dataset_path)")
+        # The cache is per cloud name, so names must be unique
+        names = [ply.stem for ply in full_path]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            raise ValueError(f"Clouds with the same name in different folders of {self.path}: {duplicates}")
         self.cloud_names = [ply.stem for ply in full_path]
         self.all_splits = list(range(len(full_path)))
         self.validation_split = [i for i, name in enumerate(self.cloud_names)
@@ -1043,7 +1052,7 @@ class RailTwinSampler(Sampler):
         # ***********
 
         # Load batch_limit dictionary
-        batch_lim_file = join(self.dataset.path, 'batch_limits.pkl')
+        batch_lim_file = join(self.dataset.work_dir, 'batch_limits.pkl')
         if exists(batch_lim_file):
             with open(batch_lim_file, 'rb') as file:
                 batch_lim_dict = pickle.load(file)
@@ -1079,7 +1088,7 @@ class RailTwinSampler(Sampler):
         # ***************
 
         # Load neighb_limits dictionary
-        neighb_lim_file = join(self.dataset.path, 'neighbors_limits.pkl')
+        neighb_lim_file = join(self.dataset.work_dir, 'neighbors_limits.pkl')
         if exists(neighb_lim_file):
             with open(neighb_lim_file, 'rb') as file:
                 neighb_lim_dict = pickle.load(file)

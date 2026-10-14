@@ -103,17 +103,15 @@ class InferenceDataset(PointCloudDataset):
             self.min_potentials = []
             self.argmin_potentials = []
             pot_dl = self.config.in_radius / self.config.pot_sample_mult
-            cloud_ind = 0
 
-            for i in range(len(self.input_trees)):
+            for input_tree in self.input_trees:
                 # Coarse potential locations (cheap, not cached)
-                sub_points = np.array(self.input_trees[cloud_ind].data, copy=False)
+                sub_points = np.array(input_tree.data, copy=False)
                 coarse_points = grid_subsampling(sub_points.astype(np.float32), sampleDl=pot_dl)
                 search_tree = KDTree(coarse_points, leaf_size=10)
 
                 # Fill data containers
                 self.pot_trees += [search_tree]
-                cloud_ind += 1
                 self.potentials += [torch.from_numpy(np.random.rand(search_tree.data.shape[0]) * 1e-3)]
                 min_ind = int(torch.argmin(self.potentials[-1]))
                 self.argmin_potentials += [min_ind]

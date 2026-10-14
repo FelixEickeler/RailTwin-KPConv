@@ -41,7 +41,6 @@ def sphere():
 
 import time as _time
 import utils.als_simulation as als_module
-from datasets.labels import cache_folder_name
 
 
 def load_method(name, **namespace):
@@ -53,8 +52,7 @@ def load_method(name, **namespace):
     defaults = dict(np=np, time=_time,
                     prepare_als_versions=als_module.prepare_als_versions,
                     prepared_als_mask=als_module.prepared_als_mask,
-                    prepared_als_settings=als_module.prepared_als_settings,
-                    cache_folder_name=cache_folder_name)
+                    prepared_als_settings=als_module.prepared_als_settings)
     defaults.update(namespace)
     exec(compile(ast.Module([fn], []), 'common.py', 'exec'), defaults)
     return defaults['_method']

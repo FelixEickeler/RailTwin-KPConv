@@ -57,3 +57,4 @@ def test_describe_start():
     assert describe_start(None, False) == "scratch"
     assert describe_start("/w/run_a/checkpoints/current_chkp.tar", True) == "finetune: run_a"
     assert describe_start("/w/run_a/checkpoints/current_chkp.tar", False) == "resume: run_a"
+    assert describe_start("/w/run_b/chkp_0010.tar", True) == "finetune: run_b"

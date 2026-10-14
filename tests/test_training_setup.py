@@ -91,6 +91,10 @@ class FakeTrainer:
         self.epoch = epoch
         self.optimizer = torch.optim.SGD([{'params': net.parameters()}], lr=lr)
         self.log = []
+        self.overview_max_epoch = None
+
+    def log_overview(self, net, training_loader, config):
+        self.overview_max_epoch = config.max_epoch
 
     def train(self, net, a, b, config):
         trainable = sorted(n for n, m in net.named_children() if next(m.parameters()).requires_grad)
@@ -113,6 +117,8 @@ def test_gradual_schedule():
     assert trainer.log[0][2] == ['head_softmax']
     assert len(trainer.log[-1][2]) == 4
     assert config.max_epoch == 60
+    # The run overview sees the whole run, not the first stage
+    assert trainer.overview_max_epoch == 60
 
 
 def test_real_schedule_with_parts_and_lr_factor():

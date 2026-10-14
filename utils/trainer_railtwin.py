@@ -94,6 +94,7 @@ class ModelTrainer:
                 checkpoint = torch.load(chkp_path)
                 net.load_state_dict(checkpoint['model_state_dict'], strict=True)
                 self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                self.best_mIoU = checkpoint.get('best_mIoU', -np.inf)
                 continue_epoch = True
                 net.train()
                 print("Model and training state restored.")
@@ -158,9 +159,7 @@ class ModelTrainer:
         last_display = time.time()
         mean_dt = np.zeros(1)
 
-        if not self.overview_logged:
-            log_run_overview(self.tb_writer, config, net, training_loader.dataset, self.start)
-            self.overview_logged = True
+        self.log_overview(net, training_loader, config)
 
         # Start training loop
         print(f"Staring training with: \n\tlr_decay: {config.lr_decays.get(1)} \n\tcurrent_epoch: {self.epoch}\n\tmax_epoch: {config.max_epoch}")
@@ -279,7 +278,8 @@ class ModelTrainer:
                 save_dict = {'epoch': self.epoch + 1,
                              'model_state_dict': net.state_dict(),
                              'optimizer_state_dict': self.optimizer.state_dict(),
-                             'saving_path': config.saving_path}
+                             'saving_path': config.saving_path,
+                             'best_mIoU': self.best_mIoU}
 
                 # Save current state of the network (for restoring purposes)
                 checkpoint_path = join(checkpoint_directory, 'current_chkp.tar')
@@ -311,7 +311,8 @@ class ModelTrainer:
             save_dict = {'epoch': self.epoch,
                          'model_state_dict': net.state_dict(),
                          'optimizer_state_dict': self.optimizer.state_dict(),
-                         'saving_path': config.saving_path}
+                         'saving_path': config.saving_path,
+                         'best_mIoU': self.best_mIoU}
             torch.save(save_dict, join(checkpoint_directory, 'current_chkp.tar'))
             torch.save(save_dict, join(checkpoint_directory, 'chkp_{:04d}.tar'.format(self.epoch)))
             if not stopped and exists(PID_file):
@@ -319,6 +320,12 @@ class ModelTrainer:
 
         print(f'Finished Training. There where {could_not_validate} times where the validation could not be processed !')
         return not stopped
+
+    def log_overview(self, net, training_loader, config):
+        """Run overview for TensorBoard (utils/run_overview.py), once per run."""
+        if not self.overview_logged:
+            log_run_overview(self.tb_writer, config, net, training_loader.dataset, self.start)
+            self.overview_logged = True
 
     def train_with_unfreeze_schedule(self, net, training_loader, val_loader, config):
         """
@@ -337,6 +344,9 @@ class ModelTrainer:
         schedule = config.unfreeze_schedule
         if not schedule:
             return self.train(net, training_loader, val_loader, config)
+
+        # Before the stages change config.max_epoch
+        self.log_overview(net, training_loader, config)
 
         max_epoch = config.max_epoch
         for p in net.parameters():
@@ -783,8 +793,8 @@ class ModelTrainer:
         self.tb_writer.add_scalar("Test/mIoU_best", self.best_mIoU, self.epoch)
         self.tb_writer.add_scalar("Test/Accuracy", acc.mean(), self.epoch)
         self.tb_writer.add_scalar("Test/Loss", output_loss + reg_loss, self.epoch)
-        self.tb_writer.add_scalar("Test/IoU_worst", worst_IoU, self.epoch)
-        self.tb_writer.add_scalar("Test/IoU_worst5", worst5_IoU.mean(), self.epoch)
+        self.tb_writer.add_scalar("Test/IoU_worst", 100 * worst_IoU, self.epoch)
+        self.tb_writer.add_scalar("Test/IoU_worst5", 100 * worst5_IoU.mean(), self.epoch)
         self.tb_writer.add_scalar("Output_Loss/Test", output_loss, self.epoch)
         self.tb_writer.add_scalar("Reg_Loss/Test", reg_loss, self.epoch)
         for name, IoU in zip(class_names, IoUs):
@@ -799,7 +809,7 @@ class ModelTrainer:
             self.tb_writer.add_figure("Overview", sum_plot, self.epoch)
             cm_plot.savefig(f"{self.plot_dir}/confusion_matrix-{self.epoch}.svg")
             sum_plot.savefig(f"{self.plot_dir}/summary-{self.epoch}.svg")
-            self.tb_writer.add_text("Test/Class_worst", f"{class_names[worst_Class]} : {worst_IoU}", self.epoch)
+            self.tb_writer.add_text("Test/Class_worst", f"{class_names[worst_Class]} : {100 * worst_IoU:.1f} %", self.epoch)
         return
 
     def slam_segmentation_validation(self, net, val_loader, config, debug=True):

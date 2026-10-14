@@ -70,7 +70,9 @@ scratch on synthetic data, `utils/config_railtwin_tl.py` for fine-tuning on real
   the training config.
 - Checked against the old files: the same clouds, splits, subsampled points, features, labels, reprojection
   indices and config values, for the synthetic (`rtib3p_16classes`) and the real setup (`rtib3p_16classes_add_3`).
-- Pre-processed data (subsampled clouds, KD-trees, projections) is cached in `dataset_work_dir`.
+- Pre-processed data (subsampled clouds, KD-trees, projections, ALS versions, batch calibration) is cached in
+  `dataset_work_dir`, never in `dataset_path` (which may be read-only). Clouds below the work dir are not read as
+  data, and two clouds with the same name in different folders are an error (the cache is per cloud name).
   The cache is in `input_<first_subsampling_dl>/` (e.g. `input_0.020/`) and is rebuilt when files are missing.
   The KD-trees are sklearn pickles: after a scikit-learn upgrade, delete that folder once.
   The reprojection of validation clouds onto the subsampled points uses `nearest_indices` (`datasets/common.py`),
@@ -82,8 +84,9 @@ scratch on synthetic data, `utils/config_railtwin_tl.py` for fine-tuning on real
   a level defined in the file); or a chain such as
   `[['input_mapping.json', 'consolidated'], ['obm_mapping.json', 'system']]` (input ids → consolidated
   components → training classes; the classes of one step are the components of the next, by name).
-  The cache folder is then e.g. `input_0.040_obm_mapping_system_<hash>`: the hash of the label table changes when a
-  mapping is edited, so the cache is rebuilt. Prediction needs no mapping (the classes are in `parameters.json`);
+  The cache folder is then e.g. `input_0.040_obm_mapping_system_<hash>`: the hash of the label table and
+  `label_column` changes when a mapping or the column is edited, so the cache is rebuilt. The ALS versions depend
+  only on the points and stay in `input_<dl>/als/` for all mappings. Prediction needs no mapping (the classes are in `parameters.json`);
   label columns of the cloud that do not fit the model's classes are not used.
 
 | File | Dataset / purpose |
@@ -128,7 +131,7 @@ The old setups as config values (paths in the Docker layout, §2.6):
 | `train_rtib3+.py` | Trains from scratch on the synthetic RTIB3+ data of `utils/config_railtwin.py` (16 classes). Arguments: `-o` results folder, `-ptp` run to resume, `-gid` GPU id, `-r` sphere radius. |
 | `train_rtib3+_tl.py` | Transfer learning on the real data of `utils/config_railtwin_tl.py`. `--pretrained <run\|chkp>` loads weights only (layers whose shape changed, e.g. `head_softmax`, stay initialised) and starts at epoch 0. `-ptp` resumes a run. Training follows `unfreeze_schedule` in `utils/config_railtwin_tl.py`: head_softmax → head_mlp → decoder → encoder (gradual unfreezing). |
 | `utils/trainer_railtwin.py` | `ModelTrainer` with `train_with_unfreeze_schedule()`, TensorBoard logging (`SummaryWriter`, confusion-matrix images through `utils/plot_cm.py`). Can fine-tune from a checkpoint or resume a run (`finetune`, `continue_epoch`). Checkpoints are found by `utils/checkpoints.py` (newest `*.tar` of a run folder, usually `current_chkp.tar`), the same rule for resuming, fine-tuning and prediction. |
-| `test_models.py` | Argparse CLI (`log_dir`, `model_path`, `out_dir`, `val`, `dataset_overwrite`). Supports the datasets `rtib+`, `RailTwin` and `-rtib`. |
+| `test_models.py` | Argparse CLI (`log_dir`, `model_path`, `out_dir`, `val`, `dataset_overwrite`). Supports the datasets `rtib+`, `RailTwin` and `-rtib`. RailTwin runs are loaded from their `parameters.json` (data paths, classes), upstream runs from `parameters.txt`. |
 | `test_railtwin.py` | Inference CLI: `-m` model, `-i` input file or folder, `-o` output, `-gid` GPU. Reads clouds through `railtwin_common` IO. |
 | `utils/predictor.py` | `Predictor`: subsamples, runs KPFCNN over `InferenceDataset`, and maps predictions back to the full cloud with a weighted 5-NN vote (`utils/voting.py`, scipy `cKDTree` on all cores: about 6 min instead of 1.5 h for 1e9 points). The KD-tree is passed to `InferenceDataset` directly, not pickled. Writes PLY files with `railtwin_common`. |
 
@@ -146,7 +149,7 @@ The old setups as config values (paths in the Docker layout, §2.6):
 
 | File | Purpose |
 |---|---|
-| `utils/run_overview.py` | Run overview in TensorBoard, written at the start of training. **HPARAMS tab:** one row per run with data (dataset, path, `first_subsampling_dl`, `in_radius`), inputs, trained / ignored classes, model (layers, deformable, feature dim, kernel points, parameters), training (start: scratch / finetune / resume, batch, LR, loss, class balancing, unfreeze schedule) and augmentation, next to mIoU, best mIoU, worst IoU, accuracy, loss and the IoU of every class. **TEXT tab** (`Run/Overview`): classes with their number and share of training points, all settings, the architecture and the full configuration. Point TensorBoard at the folder with all runs (the work dir) to compare them; runs from before this change have no row. |
+| `utils/run_overview.py` | Run overview in TensorBoard, written at the start of training. **HPARAMS tab:** one row per run with data (dataset, path, `first_subsampling_dl`, `in_radius`), inputs, trained / ignored classes, model (layers, deformable, feature dim, kernel points, parameters), training (start: scratch / finetune / resume, batch, LR, loss, class balancing, unfreeze schedule) and augmentation, next to mIoU, best mIoU (kept in the checkpoint, so it continues after a resume), worst IoU, accuracy, loss and the IoU of every class (all IoUs in percent). **TEXT tab** (`Run/Overview`): classes with their number and share of training points, all settings, the architecture and the full configuration. Point TensorBoard at the folder with all runs (the work dir) to compare them; runs from before this change have no row. |
 | `utils/plot_cm.py` | Confusion matrix and per-class overview as Plotly/Matplotlib figures and image arrays (for TensorBoard). |
 | `utils/debug_tools.py` | Lists live CUDA tensors and their sizes. |
 | `log_mem.py` | Background thread that logs GPU memory (`nvidia-smi`) into a pandas frame. |

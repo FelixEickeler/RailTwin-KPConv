@@ -47,18 +47,22 @@ def class_table(dataset):
     counts = None
     input_labels = getattr(dataset, "input_labels", None)
     if input_labels is not None and len(input_labels):
-        all_labels = np.concatenate([np.asarray(labels).ravel() for labels in input_labels]).astype(np.int64)
-        values, n = np.unique(all_labels, return_counts=True)
-        counts = dict(zip(values.tolist(), n.tolist()))
+        # Counted per cloud: no copy of all labels at once
+        counts = {}
+        for labels in input_labels:
+            values, n = np.unique(np.asarray(labels), return_counts=True)
+            for value, count in zip(values.tolist(), n.tolist()):
+                counts[int(value)] = counts.get(int(value), 0) + count
     return [(int(value), dataset.label_to_names[value], value in dataset.ignored_labels,
              None if counts is None else counts.get(int(value), 0))
             for value in dataset.label_values]
 
 
-def run_hparams(config, net, dataset, start=""):
-    """The settings that make runs differ, as a flat dict."""
+def run_hparams(config, net, dataset, start="", classes=None):
+    """The settings that make runs differ, as a flat dict. classes: class_table(dataset), if already computed."""
     architecture = list(config.architecture)
-    trained_classes = [name for _, name, ignored, _ in class_table(dataset) if not ignored]
+    classes = class_table(dataset) if classes is None else classes
+    trained_classes = [name for _, name, ignored, _ in classes if not ignored]
     return {
         # Data
         "data/dataset": _text(config.dataset),
@@ -97,10 +101,10 @@ def run_hparams(config, net, dataset, start=""):
     }
 
 
-def overview_markdown(config, net, dataset, hparam_dict):
-    """Markdown for the TEXT tab."""
+def overview_markdown(config, net, dataset, hparam_dict, classes=None):
+    """Markdown for the TEXT tab. classes: class_table(dataset), if already computed."""
     lines = ["### Classes", "", "| label | name | trained | training points | share |", "|---|---|---|---|---|"]
-    table = class_table(dataset)
+    table = class_table(dataset) if classes is None else classes
     total = sum(n for _, _, ignored, n in table if n is not None and not ignored) or 1
     for value, name, ignored, n in table:
         points = "" if n is None else f"{n:,}"
@@ -129,19 +133,21 @@ def overview_markdown(config, net, dataset, hparam_dict):
 
 def log_run_overview(writer, config, net, dataset, start=""):
     """Write the HParams entry and the text overview of a run into its TensorBoard run folder."""
-    hparam_dict = run_hparams(config, net, dataset, start)
-    # Metric columns: the overall metrics and the IoU of every trained class
-    metrics = METRICS + [f"Test/IoU/{name}" for _, name, ignored, _ in class_table(dataset) if not ignored]
+    classes = class_table(dataset)
+    hparam_dict = run_hparams(config, net, dataset, start, classes)
+    # Metric columns: the overall metrics and the IoU of every trained class (all in percent)
+    metrics = METRICS + [f"Test/IoU/{name}" for _, name, ignored, _ in classes if not ignored]
     for summary in hparams(hparam_dict, {tag: 0.0 for tag in metrics}):
         writer.file_writer.add_summary(summary)
-    writer.add_text("Run/Overview", overview_markdown(config, net, dataset, hparam_dict), 0)
+    writer.add_text("Run/Overview", overview_markdown(config, net, dataset, hparam_dict, classes), 0)
     writer.flush()
     return hparam_dict
 
 
 def describe_start(chkp_path, finetune):
-    """'scratch', 'resume: <run>' or 'finetune: <run>' (run = folder that holds the checkpoints folder)."""
+    """'scratch', 'resume: <run>' or 'finetune: <run>' (run = folder of the checkpoint, above 'checkpoints')."""
     if chkp_path is None:
         return "scratch"
-    run = Path(chkp_path).parent.parent.name
+    folder = Path(chkp_path).resolve().parent
+    run = (folder.parent if folder.name == "checkpoints" else folder).name
     return f"{'finetune' if finetune else 'resume'}: {run}"

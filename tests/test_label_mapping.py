@@ -56,7 +56,12 @@ def test_chain(tmp_path):
     data["levels"]["consolidated"]["components"]["wire"] = "unclassified"
     path.write_text(json.dumps(data))
     mapped_labels(dataset, dataset.config, OWN, ["ignored"])
-    assert cache_folder_name(dataset, 0.04) != name
+    edited = cache_folder_name(dataset, 0.04)
+    assert edited != name
+
+    # Another label column gets its own cache too
+    dataset.config.label_column = "other"
+    assert cache_folder_name(dataset, 0.04) not in (name, edited)
 
 
 def test_unknown_level_fails_at_start():

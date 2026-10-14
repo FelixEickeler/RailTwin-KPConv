@@ -75,11 +75,11 @@ class Predictor:
         self.softmax = torch.nn.Softmax(1)
         self.num_votes = 100 #100
 
-    def subsample(self, pointcloud, cache_name):
-        # subsample
+    def subsample(self, pointcloud, local_xyz, cache_name):
+        """Grid subsampling of the cloud; local_xyz: float32[N, 3] local coordinates (no copy of the whole cloud)."""
         logger.info("Subsampling points...")
         dl = self.config.first_subsampling_dl
-        tmp_set = pointcloud[self.config.features].to_numpy(np.float32)
+        features = pointcloud[self.config.features[3:]].to_numpy(np.float32)
         label_values = list(self.config.labels.values()) if isinstance(self.config.labels, dict) else [0]
         labels = None
         if all(name in pointcloud for name in self.config.pred_names):
@@ -91,7 +91,7 @@ class Predictor:
         if labels is None:
             # Unlabelled cloud: placeholder labels (a valid label value, not used for the prediction)
             labels = np.full((len(pointcloud), len(self.config.pred_names)), min(label_values), dtype=np.int32)
-        points, features, labels = grid_subsampling(tmp_set[:, :3], tmp_set[:, 3:], labels, sampleDl=dl)
+        points, features, labels = grid_subsampling(local_xyz, features, labels, sampleDl=dl)
 
         subsampled = pandas.DataFrame(np.hstack([points, features]), columns=self.config.features).join(
             pandas.DataFrame(labels, columns=self.config.pred_names, dtype=np.int32))
@@ -196,18 +196,19 @@ class Predictor:
     def run_on_cloud(self, pointcloud: pandas.DataFrame, cache_name="tmp"):
         cache_name = f"{cache_name}_{self.model_key}"
 
-        # Work in local coordinates: float32 is not precise enough for georeferenced coordinates
+        # Work in local coordinates: float32 is not precise enough for georeferenced coordinates, but for local ones.
+        # One float32 array of the coordinates is all that is copied of the cloud (1e9 points: 12 GB).
         xyz_names = list(self.config.features[:3])
-        full_xyz = pointcloud[xyz_names].to_numpy(np.float64)
-        offset = np.floor(full_xyz.min(axis=0))
-        local_cloud = pointcloud.copy()
-        local_cloud[xyz_names] = full_xyz - offset
+        offset = np.floor(pointcloud[xyz_names].min().to_numpy(np.float64))
+        local_xyz = np.empty((len(pointcloud), 3), dtype=np.float32)
+        for i, name in enumerate(xyz_names):
+            local_xyz[:, i] = pointcloud[name].to_numpy(np.float64) - offset[i]
 
         inference_path = self.folder / f"{cache_name}_predictions.ply"
 
         if not inference_path.exists():
             # subsample
-            subsampled_path, subsampled, search_tree, features, labels = self.subsample(pointcloud=local_cloud, cache_name=cache_name)
+            subsampled_path, subsampled, search_tree, features, labels = self.subsample(pointcloud, local_xyz, cache_name)
 
             # Setup Dataset
             dataset = InferenceDataset(self.config, cloud_path=subsampled_path, search_tree=search_tree, use_potentials=True)
@@ -237,8 +238,8 @@ class Predictor:
         logger.info(f"Big play with {len(prediction)} of points")
 
         logger.info("Transferring the labels to the full cloud")
-        pointcloud[self.selected_property] = knn_voting(prediction[["x", "y", "z"]].to_numpy(), prediction[self.selected_property].to_numpy(),
-                                                        full_xyz - offset, knn=5)
+        pointcloud[self.selected_property] = knn_voting(prediction[["x", "y", "z"]].to_numpy(),
+                                                        prediction[self.selected_property].to_numpy(), local_xyz, knn=5)
         # print(f"in seconds: {t2 -t1}")
         logger.info("PointCloud ready")
         return pointcloud
