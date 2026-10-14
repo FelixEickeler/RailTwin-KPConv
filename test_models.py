@@ -36,7 +36,7 @@ from datasets.S3DIS import *
 from datasets.SensatUrban import *
 from datasets.SemanticKitti import *
 from datasets.Toronto3D import *
-from datasets.rtib3p import RTIB3pSampler, RTIB3pCollate
+from datasets.railtwin import RailTwinSampler, RailTwinCollate
 import importlib
 from torch.utils.data import DataLoader
 
@@ -103,7 +103,7 @@ if __name__ == '__main__':
                         help="Choose to test on validation or test split")
     parser.add_argument('-gid', '--gpu_id', default="0", type=str,
                         help="Choose the GPU_ID for training")
-    parser.add_argument('-do', '--dataset_overwrite', default="rtib3p", type=str,
+    parser.add_argument('-do', '--dataset_overwrite', default="railtwin", type=str,
                         help="Name the file of the dataset with an RTIB+ class")
     args = parser.parse_args()
 
@@ -151,7 +151,7 @@ if __name__ == '__main__':
 
     if dataset_overwrite != config.dataset and dataset_overwrite != "rtib+":
         dataset_import = importlib.import_module(f'datasets.{dataset_overwrite}')
-        RTIB3p = dataset_import.RTIB3p
+        RTIB3p = dataset_import.RailTwinDataset
         # RTIB3p = getattr(__import__(f"datasets.{dataset_overwrite}"), "*")
 
     ##################################
@@ -201,8 +201,8 @@ if __name__ == '__main__':
         collate_fn = SemanticKittiCollate
     elif config.dataset in ['rtib+', "RailTwin", "-rtib"]:
         test_dataset = RTIB3p(config, set='validation', use_potentials=True)
-        test_sampler = RTIB3pSampler(test_dataset)
-        collate_fn = RTIB3pCollate
+        test_sampler = RailTwinSampler(test_dataset)
+        collate_fn = RailTwinCollate
     else:
         raise ValueError('Unsupported dataset : ' + config.dataset)
 

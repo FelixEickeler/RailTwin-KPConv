@@ -115,6 +115,34 @@ class RailTwinConfig(Config):
     in_features_dim = 1 + len(input_features)
     drop_features = False                   # zero the input features of every point (data without them)
 
+    # Data (datasets/railtwin.py): clouds below dataset_path (.ply, searched recursively), cache in dataset_work_dir.
+    # Clouds whose name contains one of validation_patterns are the validation set, exclude_patterns are not used.
+    dataset_path = '/home/point_warrior/dataset/synth/rtib3+_16classes'
+    dataset_work_dir = '/home/point_warrior/dataset/synth/train/16classes'
+    validation_patterns = ['_quintile_4']
+    exclude_patterns = []
+    # Classes {name: id} of the 'system' column, used when label_mapping is None
+    dataset_labels = {
+        "ignored": 0,
+        "stuff": 1,
+        "ground": 2,
+        "rail-bed": 3,
+        "sleeper": 4,
+        "rail": 5,
+        "platform-structural": 6,
+        "vegetation": 7,
+        "tree": 8,
+        "building": 9,
+        "catenary-wire": 10,
+        "catenary-pole": 11,
+        "noise-barrier": 12,
+        "platform-asset": 13,
+        "cantilever": 14,
+        "contact-wire": 15,
+        "dropper": 16
+    }
+    dataset_ignored = ['ignored']
+
     # Label mapping (railtwin_common/labels): the clouds keep fine component ids in label_column, the training
     # classes are a level of the mapping (e.g. 'system', 'component' or a level defined in the file).
     # None = the classes written in the dataset file and its 'system' column.
@@ -164,8 +192,8 @@ class RailTwinConfig(Config):
     grad_clip_norm = 100.0
 
     # Number of batch (decrease to reduce memory cost, but it should remain > 3 for stability)
-    # Keep both equal: the validation dataset writes val_batch_num into the shared config (rtib3p datasets) before
-    # the training batches are calibrated, so training always ran with val_batch_num. 6 = what earlier trainings used.
+    # 6 = what earlier trainings used (the old rtib3p_16classes dataset shared its config, so training ran with
+    # val_batch_num; datasets/railtwin.py keeps them apart).
     batch_num = 6
     val_batch_num = 6
     # Number of steps per epochs

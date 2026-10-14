@@ -84,6 +84,12 @@ class Config:
     label_smoothing = 0.0
     balance_classes = False
     unfreeze_schedule = None
+    dataset_path = ''                           # RailTwin data (datasets/railtwin.py): folder with the clouds
+    dataset_work_dir = ''                       # cache folder
+    validation_patterns = ['_quintile_4']       # name parts of the validation clouds
+    exclude_patterns = []                       # name parts of clouds that are not used
+    dataset_labels = {}                         # classes {name: id} without label_mapping
+    dataset_ignored = []
     label_mapping = None                        # label mapping file (railtwin_common/labels)
     label_level = 'system'                      # class set of the mapping that is trained
     label_column = 'component'                  # cloud column with the component ids

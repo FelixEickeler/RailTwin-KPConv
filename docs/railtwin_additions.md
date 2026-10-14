@@ -33,7 +33,8 @@ The 29 upstream commits after it were applied as a 3-way patch.
 
 - **`datasets/S3DIS.py` and `train_S3DIS.py` are back** as plain upstream files, so S3DIS support works
   again (`test_models.py`, `plot_convergence.py` and `visualize_deformations.py` import them).
-  `rtib3p.py` is a separate, heavily modified copy of the original `S3DIS.py`. It is not replaced by it.
+  `rtib3p.py` was a separate, heavily modified copy of the original `S3DIS.py` (the rtib3p files are now merged into
+  `datasets/railtwin.py`, §2.1).
 - **Rail code no longer depends on S3DIS.** The fork had removed the batch and collate code from
   `rtib3p.py`, but the train scripts still imported `S3DISCollate` from the deleted `datasets.S3DIS`.
   `RTIB3pCustomBatch` and `RTIB3pCollate` now live in `datasets/rtib3p.py`. `train_rtib3+.py`,
@@ -52,18 +53,24 @@ The 29 upstream commits after it were applied as a 3-way patch.
 ## 2. RailTwin additions
 
 The changes fall into three groups: data and config loading, custom training, and writing results.
-Files named `rtib*` belong to a specific dataset; files named `RailTwin*` / `railtwin*` are generic.
-
 ### 2.1 Datasets (`datasets/`)
 
-All of these derive from upstream's `S3DISDataset` (potential-based sphere sampling, `cloud_segmentation`).
-The main differences from S3DIS:
+`datasets/railtwin.py` holds the RailTwin dataset (`RailTwinDataset`), its sampler (`RailTwinSampler`) and batch /
+collate (`RailTwinCustomBatch`, `RailTwinCollate`). It derives from upstream's `S3DISDataset` (potential-based
+sphere sampling, `cloud_segmentation`) and replaces the nine `rtib3p*.py` / `test_dataset.py` files, which differed
+only in path, split and class list. These are now config options (`utils/config_railtwin.py` for training from
+scratch on synthetic data, `utils/config_railtwin_tl.py` for fine-tuning on real data):
 
-- Labels are given as a `name → id` dict (`label_from_json`) and saved into the config
-  (`config.labels`, `config.ignored_labels`, `config.dataset_name`). `"ignored"` is the ignored class.
-- Every `**/*.ply` file under `self.path` is a cloud. The train/validation split comes from the file name
-  (e.g. `_quintile_3`, `_quintile_4` → validation).
-- Pre-processed data (subsampled clouds, KD-trees, projections) is cached in `self.work_dir`.
+- `dataset_path`: every `**/*.ply` below it is a cloud (sorted by path). `exclude_patterns`: clouds whose name
+  contains one of them are not used. `validation_patterns`: clouds whose name contains one of them are the
+  validation set (e.g. `['_quintile_3', '_quintile_4']`).
+- `dataset_labels` (`name → id` of the `system` column) and `dataset_ignored`, or classes from `label_mapping`
+  (below). They are saved into the config (`config.labels`, `config.ignored_labels`, `config.dataset_name`).
+- The dataset works on a copy of the config, so the validation set's `batch_num = val_batch_num` does not reach
+  the training config.
+- Checked against the old files: the same clouds, splits, subsampled points, features, labels, reprojection
+  indices and config values, for the synthetic (`rtib3p_16classes`) and the real setup (`rtib3p_16classes_add_3`).
+- Pre-processed data (subsampled clouds, KD-trees, projections) is cached in `dataset_work_dir`.
   The cache is in `input_<first_subsampling_dl>/` (e.g. `input_0.020/`) and is rebuilt when files are missing.
   The KD-trees are sklearn pickles: after a scikit-learn upgrade, delete that folder once.
   The reprojection of validation clouds onto the subsampled points uses `nearest_indices` (`datasets/common.py`),
@@ -81,18 +88,19 @@ The main differences from S3DIS:
 
 | File | Dataset / purpose |
 |---|---|
-| `rtib3p.py` | Base RTIB3+ dataset; also provides `RTIB3pSampler`, `RTIB3pCustomBatch` and `RTIB3pCollate`, used by all train scripts, `test_models.py` and `utils/predictor.py`. |
-| `rtib3p_11classes.py` | Synthetic RTIB3+, 11 classes (`dataset/synth/rtib3+_11classes`). |
-| `rtib3p_16classes.py` | Synthetic RTIB3+, 16 classes (`dataset/synth/rtib3+_16classes`). |
-| `rtib3p_16classes_add_1.py` | Physical 16-class data; quintiles 1+2 excluded, 3+4 used for validation. |
-| `rtib3p_16classes_add_2.py` | Like `add_1`, but only quintile 2 excluded; deep-copies the config. |
-| `rtib3p_16classes_add_3.py` | Like `add_1`, but all quintiles used; deep-copies the config. Used by `train_rtib3+_tl.py`. |
-| `rtib3p_real.py` | Real (measured) point clouds. |
-| `rtib3p_reworked.py`, `test_dataset.py` | Experimental variants. |
+| `railtwin.py` | RailTwin dataset, sampler and collate; used by all RailTwin train scripts, `test_models.py` and `utils/predictor.py`. |
+| `labels.py` | Training classes from a label mapping (above). |
 | `inference_dataset.py` | `InferenceDataset` / `InferenceSampler`: a dataset without labels over a single cloud and KD-tree, used by `utils/predictor.py`. |
 
-Paths are hard-coded to the Docker layout (`/home/point_warrior/dataset/...`, see §2.6).
-To switch the dataset or split, change the `import ... as RailTwinDatasetECPPM2022` line in the train script.
+The old setups as config values (paths in the Docker layout, §2.6):
+
+| Old file | `dataset_path` / `dataset_work_dir` (below `/home/point_warrior/dataset/`) | `validation_patterns` | `exclude_patterns` |
+|---|---|---|---|
+| `rtib3p_16classes.py` (`config_railtwin.py`) | `synth/rtib3+_16classes` / `synth/train/16classes` | `_quintile_4` | |
+| `rtib3p_16classes_add_3.py` (`config_railtwin_tl.py`) | `pysical/16classes` / `pysical/train/16classes_2` | `_quintile_3`, `_quintile_4` | |
+| `rtib3p_16classes_add_2.py` | as `add_3` | `_quintile_3`, `_quintile_4` | `_quintile_2` |
+| `rtib3p_16classes_add_1.py` | `pysical/16classes` / `pysical/train/16classes_1` | `_quintile_3`, `_quintile_4` | `_quintile_1`, `_quintile_2` |
+| `rtib3p_11classes.py` | `synth/rtib3+_11classes` / `synth/train/11classes`, 11-class `dataset_labels` | `_quintile_4` | |
 
 ### 2.2 Changes to shared upstream code
 
@@ -117,8 +125,8 @@ To switch the dataset or split, change the `import ... as RailTwinDatasetECPPM20
 | File | Purpose |
 |---|---|
 | `train_railtwin.py` | Generic RailTwin training (uses `datasets.RailTwin_static`, see §3). |
-| `train_rtib3+.py` | Trains from scratch on RTIB3+ (16 classes). Arguments: `-o` results folder, `-ptp` run to resume, `-gid` GPU id, `-r` sphere radius. |
-| `train_rtib3+_tl.py` | Transfer learning on `rtib3p_16classes_add_3`. `--pretrained <run\|chkp>` loads weights only (layers whose shape changed, e.g. `head_softmax`, stay initialised) and starts at epoch 0. `-ptp` resumes a run. Training follows `unfreeze_schedule` in `utils/config_railtwin_tl.py`: head_softmax → head_mlp → decoder → encoder (gradual unfreezing). |
+| `train_rtib3+.py` | Trains from scratch on the synthetic RTIB3+ data of `utils/config_railtwin.py` (16 classes). Arguments: `-o` results folder, `-ptp` run to resume, `-gid` GPU id, `-r` sphere radius. |
+| `train_rtib3+_tl.py` | Transfer learning on the real data of `utils/config_railtwin_tl.py`. `--pretrained <run\|chkp>` loads weights only (layers whose shape changed, e.g. `head_softmax`, stay initialised) and starts at epoch 0. `-ptp` resumes a run. Training follows `unfreeze_schedule` in `utils/config_railtwin_tl.py`: head_softmax → head_mlp → decoder → encoder (gradual unfreezing). |
 | `utils/trainer_railtwin.py` | `ModelTrainer` with `train_with_unfreeze_schedule()`, TensorBoard logging (`SummaryWriter`, confusion-matrix images through `utils/plot_cm.py`). Can fine-tune from a checkpoint or resume a run (`finetune`, `continue_epoch`). Checkpoints are found by `utils/checkpoints.py` (newest `*.tar` of a run folder, usually `current_chkp.tar`), the same rule for resuming, fine-tuning and prediction. |
 | `test_models.py` | Argparse CLI (`log_dir`, `model_path`, `out_dir`, `val`, `dataset_overwrite`). Supports the datasets `rtib+`, `RailTwin` and `-rtib`. |
 | `test_railtwin.py` | Inference CLI: `-m` model, `-i` input file or folder, `-o` output, `-gid` GPU. Reads clouds through `railtwin_common` IO. |
@@ -170,11 +178,9 @@ To switch the dataset or split, change the `import ... as RailTwinDatasetECPPM20
 
 - `train_railtwin.py` imports `datasets.RailTwin_static` (`RailTwinStatic`, probably the ECPPM 2022 dataset
   with a hard-coded cloud list), which is not in the repository. The script now falls back to
-  `datasets.rtib3p.RTIB3p` and prints a warning. (`utils/predictor.py` used to import `S3DISCollate` from the missing `datasets.RailTwin_priming`;
-  it now uses `RTIB3pCollate`.)
-- `rtib3p_16classes_add_2.py` and `rtib3p_16classes_add_3.py` share the same `work_dir`
-  (`.../train/16classes_2`). Their cached pre-processing can overwrite each other.
-- Dataset paths are hard-coded absolute paths inside the Docker container.
+  `datasets.railtwin.RailTwinDataset` and prints a warning. (`utils/predictor.py` used to import `S3DISCollate` from the missing `datasets.RailTwin_priming`;
+  it now uses `RailTwinCollate`.)
+- The default dataset paths in the RailTwin configs are absolute paths inside the Docker container.
 - `utils/ply.py` reads the PLY `offset` element but does not apply it to the points.
 - `docker/docker-compose.yml.save` is a leftover editor backup.
 

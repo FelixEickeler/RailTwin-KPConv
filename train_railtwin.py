@@ -29,19 +29,14 @@ import argparse
 from torch.utils.data import DataLoader
 from models.architectures import KPFCNN
 
-# from custom_datasets.railtwin_ecppm2022 import *
-# from datasets.S3DIS import S3DISDataset as RailTwinDatasetECPPM2022
-# from datasets.RailTwin_Ecppm2022 import RailTwinDatasetECPPM2022
-# from datasets.S3DIS import S3DISDataset as RailTwinDatasetECPPM2022
 try:
-    from datasets.RailTwin_static import RailTwinStatic as RailTwinDatasetECPPM2022
+    from datasets.RailTwin_static import RailTwinStatic as RailTwinDataset
 except ImportError:
-    # RailTwin_static (ECPPM 2022 dataset) is not part of this repository; fall back to the RTIB3+ dataset
+    # RailTwin_static (ECPPM 2022 dataset) is not part of this repository; fall back to the RailTwin dataset
     import warnings
-    warnings.warn('datasets.RailTwin_static not found, falling back to datasets.rtib3p.RTIB3p')
-    from datasets.rtib3p import RTIB3p as RailTwinDatasetECPPM2022
-from datasets.rtib3p import RTIB3pSampler as RailTwinSampler
-from datasets.rtib3p import RTIB3pCollate as RailTwinCollate
+    warnings.warn('datasets.RailTwin_static not found, falling back to datasets.railtwin.RailTwinDataset')
+    from datasets.railtwin import RailTwinDataset
+from datasets.railtwin import RailTwinSampler, RailTwinCollate
 from utils.trainer_railtwin import ModelTrainer
 from utils.config_railtwin import RailTwinConfig
 from utils.checkpoints import find_checkpoint
@@ -101,10 +96,10 @@ def train_railtwin(working_dir, previous_training_path=Path(''), config_path=Pat
 
     # Initialize datasets
     # Class-balanced training spheres (config.balance_classes) instead of potentials; validation keeps potentials
-    training_dataset = RailTwinDatasetECPPM2022(config, set='training',
+    training_dataset = RailTwinDataset(config, set='training',
                                                 use_potentials=not config.balance_classes)
-    test_dataset = RailTwinDatasetECPPM2022(config, set='validation', use_potentials=True)
-    # test_dataset = RailTwinDatasetECPPM2022(config, set='test', use_potentials=True)
+    test_dataset = RailTwinDataset(config, set='validation', use_potentials=True)
+    # test_dataset = RailTwinDataset(config, set='test', use_potentials=True)
 
     # Initialize samplers
     training_sampler = RailTwinSampler(training_dataset)

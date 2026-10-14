@@ -29,15 +29,8 @@ import argparse
 from torch.utils.data import DataLoader
 from models.architectures import KPFCNN
 
-# from custom_datasets.railtwin_ecppm2022 import *
-# from datasets.S3DIS import S3DISDataset as RailTwinDatasetECPPM2022
-# from datasets.RailTwin_Ecppm2022 import RailTwinDatasetECPPM2022
-# from datasets.S3DIS import S3DISDataset as RailTwinDatasetECPPM2022
-# from datasets.rtib3p import RTIB3p as RailTwinDatasetECPPM2022
-from datasets.rtib3p_16classes import RTIB3p as RailTwinDatasetECPPM2022
-from datasets.rtib3p import RTIB3pSampler as RailTwinSampler
-from datasets.rtib3p import RTIB3pCollate as RailTwinCollate
 from utils.checkpoints import find_checkpoint
+from datasets.railtwin import RailTwinDataset, RailTwinSampler, RailTwinCollate
 from utils.trainer_railtwin import ModelTrainer
 from utils.config_railtwin import RailTwinConfig
 
@@ -110,14 +103,14 @@ def train_railtwin(working_path, previous_training_path=Path(''), gid=None, over
 
     # Initialize datasets
     # Class-balanced training spheres (config.balance_classes) instead of potentials; validation keeps potentials
-    training_dataset = RailTwinDatasetECPPM2022(config, set='training',
+    training_dataset = RailTwinDataset(config, set='training',
                                                 use_potentials=not config.balance_classes)
     training_sampler = RailTwinSampler(training_dataset)
 
-    test_dataset = RailTwinDatasetECPPM2022(config, set='validation', use_potentials=True)
+    test_dataset = RailTwinDataset(config, set='validation', use_potentials=True)
     test_sampler = RailTwinSampler(test_dataset)
 
-    # test_dataset = RailTwinDatasetECPPM2022(config, set='test', use_potentials=True)
+    # test_dataset = RailTwinDataset(config, set='test', use_potentials=True)
 
     # Initialize samplers
 

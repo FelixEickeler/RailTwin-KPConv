@@ -30,7 +30,7 @@ def load_method(path, cls_name, name, namespace):
 # ----------------------------------------------------------------------------------------------------------------------
 
 def run_sampler(input_labels, label_values, ignored=(0,), batch_num=6, steps=50):
-    iterate = load_method('datasets/rtib3p.py', 'RTIB3pSampler', '__iter__',
+    iterate = load_method('datasets/railtwin.py', 'RailTwinSampler', '__iter__',
                           {'np': np, 'torch': torch, 'warnings': warnings})
     num_classes = len([v for v in label_values if v not in ignored])
     epoch_n = steps * batch_num

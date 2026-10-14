@@ -16,7 +16,7 @@ import torch
 from sklearn.neighbors import KDTree
 from torch.utils.data import DataLoader
 
-from datasets.rtib3p import RTIB3pCollate
+from datasets.railtwin import RailTwinCollate
 from datasets.common import grid_subsampling
 from datasets.inference_dataset import InferenceDataset, InferenceSampler
 from models.architectures import KPFCNN
@@ -217,7 +217,7 @@ class Predictor:
             test_loader = DataLoader(dataset,
                                      batch_size=1,
                                      sampler=sampler,
-                                     collate_fn=RTIB3pCollate,
+                                     collate_fn=RailTwinCollate,
                                      num_workers=self.config.input_threads,
                                      pin_memory=True)
 
