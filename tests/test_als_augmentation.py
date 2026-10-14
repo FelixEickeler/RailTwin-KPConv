@@ -41,6 +41,7 @@ def sphere():
 
 import time as _time
 import utils.als_simulation as als_module
+from datasets.labels import cache_folder_name
 
 
 def load_method(name, **namespace):
@@ -52,7 +53,8 @@ def load_method(name, **namespace):
     defaults = dict(np=np, time=_time,
                     prepare_als_versions=als_module.prepare_als_versions,
                     prepared_als_mask=als_module.prepared_als_mask,
-                    prepared_als_settings=als_module.prepared_als_settings)
+                    prepared_als_settings=als_module.prepared_als_settings,
+                    cache_folder_name=cache_folder_name)
     defaults.update(namespace)
     exec(compile(ast.Module([fn], []), 'common.py', 'exec'), defaults)
     return defaults['_method']
@@ -65,7 +67,7 @@ class FakeTree:
 
 def fake_dataset(tmp_path, clouds, split='training', **config):
     cfg = make_config(**{'first_subsampling_dl': 0.04, **config})
-    return SimpleNamespace(set=split, config=cfg, work_dir=str(tmp_path), cloud_names=list(clouds),
+    return SimpleNamespace(set=split, config=cfg, work_dir=str(tmp_path), cloud_names=list(clouds), label_mapping=None,
                            input_trees=[FakeTree(p) for p in clouds.values()])
 
 

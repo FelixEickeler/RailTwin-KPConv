@@ -80,12 +80,17 @@ class Predictor:
         logger.info("Subsampling points...")
         dl = self.config.first_subsampling_dl
         tmp_set = pointcloud[self.config.features].to_numpy(np.float32)
+        label_values = list(self.config.labels.values()) if isinstance(self.config.labels, dict) else [0]
+        labels = None
         if all(name in pointcloud for name in self.config.pred_names):
             labels = pointcloud[self.config.pred_names].to_numpy(np.int32)
-        else:
+            if not np.isin(labels, label_values).all():
+                # Labels of other classes (e.g. a model trained with a label mapping): not usable
+                logger.info("The label columns of the cloud do not match the classes of the model, not used")
+                labels = None
+        if labels is None:
             # Unlabelled cloud: placeholder labels (a valid label value, not used for the prediction)
-            placeholder = min(self.config.labels.values()) if isinstance(self.config.labels, dict) else 0
-            labels = np.full((len(pointcloud), len(self.config.pred_names)), placeholder, dtype=np.int32)
+            labels = np.full((len(pointcloud), len(self.config.pred_names)), min(label_values), dtype=np.int32)
         points, features, labels = grid_subsampling(tmp_set[:, :3], tmp_set[:, 3:], labels, sampleDl=dl)
 
         subsampled = pandas.DataFrame(np.hstack([points, features]), columns=self.config.features).join(

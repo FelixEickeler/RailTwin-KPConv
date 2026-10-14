@@ -160,6 +160,9 @@ class Config:
     label_smoothing = 0.0
     balance_classes = False               # class-balanced sphere centres instead of potentials
     unfreeze_schedule = None              # fine-tuning stages (utils/trainer_railtwin.py)
+    label_mapping = None                  # label mapping file (railtwin_common/labels), None = dataset classes
+    label_level = 'system'                # class set of the mapping that is trained
+    label_column = 'component'            # cloud column with the component ids
 
     # Regularization loss importance
     weight_decay = 1e-3

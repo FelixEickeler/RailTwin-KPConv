@@ -34,6 +34,7 @@ from datasets.rotations import random_rotation
 from datasets.features import LEGACY_FEATURES, select_features, stack_features
 from datasets.mixing import mix_spheres
 from utils.als_simulation import prepare_als_versions, prepared_als_mask, prepared_als_settings
+from datasets.labels import cache_folder_name
 
 # Subsampling extension
 import cpp_wrappers.cpp_subsampling.grid_subsampling as cpp_subsampling
@@ -229,6 +230,7 @@ class PointCloudDataset(Dataset):
         self.set = None
         self.calibrating = False    # set by the sampler calibration (no Mix3D while calibrating)
         self.als_versions = None    # prepared ALS versions (prepare_als)
+        self.label_mapping = None   # label mapping of the training classes (datasets/labels.py)
         self.path = ''
         self.label_to_names = {}
         self.num_classes = 0
@@ -313,7 +315,7 @@ class PointCloudDataset(Dataset):
         from pathlib import Path
 
         settings = prepared_als_settings(self.config)
-        cache_dir = Path(self.work_dir) / 'input_{:.3f}'.format(self.config.first_subsampling_dl) / 'als'
+        cache_dir = Path(self.work_dir) / cache_folder_name(self, self.config.first_subsampling_dl) / 'als'
         cache_dir.mkdir(parents=True, exist_ok=True)
 
         self.als_versions = []

@@ -42,6 +42,7 @@ from torch.utils.data import Sampler, get_worker_info
 from utils.mayavi_visu import *
 
 from datasets.common import grid_subsampling, nearest_indices
+from datasets.labels import cache_folder_name, mapped_labels, read_labels
 from utils.config import bcolors
 
 
@@ -84,6 +85,7 @@ class RTIB3p(PointCloudDataset):
             "noise-barrier": 12
         }
         to_ignore = ["ignored"]
+        label_from_json, to_ignore = mapped_labels(self, config, label_from_json, to_ignore)
 
         # i think thats the only thing that does not carry over
         self.config.labels = label_from_json
@@ -767,7 +769,7 @@ class RTIB3p(PointCloudDataset):
         dl = self.config.first_subsampling_dl
 
         # Create path for files
-        tree_path = Path(work_dir) / 'input_{:.3f}'.format(dl)
+        tree_path = Path(work_dir) / cache_folder_name(self, dl)
         tree_path.mkdir(parents=True, exist_ok=True)
 
         ##############
@@ -810,7 +812,7 @@ class RTIB3p(PointCloudDataset):
                 data = read_ply(file_path)
                 points = np.vstack((data['x'], data['y'], data['z'])).T
                 colors = np.vstack((data['above_ground'], data['intensity'])).T
-                labels = data['system'].astype("<i4")
+                labels = read_labels(self, data).astype("<i4")
 
                 # Subsample cloud
                 sub_points, sub_colors, sub_labels = grid_subsampling(points,
@@ -921,7 +923,7 @@ class RTIB3p(PointCloudDataset):
                 else:
                     data = read_ply(file_path)
                     points = np.vstack((data['x'], data['y'], data['z'])).T
-                    labels = data['system']
+                    labels = read_labels(self, data)
 
                     # Compute projection inds
                     idxs = nearest_indices(self.input_trees[i], points)

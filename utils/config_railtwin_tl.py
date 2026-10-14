@@ -115,6 +115,13 @@ class RailTwinConfig(Config):
     in_features_dim = 1 + len(input_features)
     drop_features = False                   # zero the input features of every point (data without them)
 
+    # Label mapping (railtwin_common/labels): the clouds keep fine component ids in label_column, the training
+    # classes are a level of the mapping (e.g. 'system', 'component' or a level defined in the file).
+    # None = the classes written in the dataset file and its 'system' column.
+    label_mapping = None                    # e.g. 'obm_mapping.json' (name in railtwin_common/labels, or a path)
+    label_level = 'system'
+    label_column = 'component'
+
     # Prediction (utils/predictor.py): point fields read from the clouds (x, y, z first, then the input feature
     # columns), the label field(s) and the one that is predicted (written as preds_<pred_selected>)
     features = ['x', 'y', 'z', 'above_ground', 'intensity']

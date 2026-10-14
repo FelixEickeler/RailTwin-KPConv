@@ -84,6 +84,9 @@ class Config:
     label_smoothing = 0.0
     balance_classes = False
     unfreeze_schedule = None
+    label_mapping = None                        # label mapping file (railtwin_common/labels)
+    label_level = 'system'                      # class set of the mapping that is trained
+    label_column = 'component'                  # cloud column with the component ids
 
     weight_decay = 1e-3                         # Regularization loss importance
     class_w = []                                # Choose weights for class (used in segmentation loss). Empty list for no weights

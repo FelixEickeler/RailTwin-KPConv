@@ -68,6 +68,16 @@ The main differences from S3DIS:
   The KD-trees are sklearn pickles: after a scikit-learn upgrade, delete that folder once.
   The reprojection of validation clouds onto the subsampled points uses `nearest_indices` (`datasets/common.py`),
   same result as the sklearn query, on all cores.
+- **Label mapping** (`datasets/labels.py`, `railtwin_common/labels`): with `label_mapping` set in the config, the
+  clouds keep fine ids in `label_column` (default `component`) and are mapped to the training classes when a cloud
+  is loaded, before subsampling. The classes, ignored classes and `num_classes` then come from the mapping, not
+  from the dataset file. `label_mapping = 'obm_mapping.json'` with `label_level = 'system'` (or `'component'`, or
+  a level defined in the file); or a chain such as
+  `[['input_mapping.json', 'consolidated'], ['obm_mapping.json', 'system']]` (input ids → consolidated
+  components → training classes; the classes of one step are the components of the next, by name).
+  The cache folder is then e.g. `input_0.040_obm_mapping_system_<hash>`: the hash of the label table changes when a
+  mapping is edited, so the cache is rebuilt. Prediction needs no mapping (the classes are in `parameters.json`);
+  label columns of the cloud that do not fit the model's classes are not used.
 
 | File | Dataset / purpose |
 |---|---|
