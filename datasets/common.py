@@ -38,12 +38,23 @@ from utils.als_simulation import prepare_als_versions, prepared_als_mask, prepar
 # Subsampling extension
 import cpp_wrappers.cpp_subsampling.grid_subsampling as cpp_subsampling
 import cpp_wrappers.cpp_neighbors.radius_neighbors as cpp_neighbors
+from scipy.spatial import cKDTree
 
 # ----------------------------------------------------------------------------------------------------------------------
 #
 #           Utility functions
 #       \***********************/
 #
+
+def nearest_indices(search_tree, points):
+    """
+    Index of the nearest point of search_tree (sklearn KDTree) for every point, as int32. Same result as
+    search_tree.query(points), but the scipy tree is queried on all cores (the sklearn query uses one).
+    RailTwin addition, for the reprojection of large validation / test clouds.
+    """
+    tree = cKDTree(np.asarray(search_tree.data), leafsize=10, balanced_tree=False, compact_nodes=False)
+    return tree.query(points, k=1, workers=-1)[1].astype(np.int32)
+
 
 def grid_subsampling(points, features=None, labels=None, sampleDl=0.1, verbose=0):
     """

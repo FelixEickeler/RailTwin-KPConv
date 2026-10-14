@@ -48,7 +48,7 @@ from utils.mayavi_visu import *
 class InferenceDataset(PointCloudDataset):
     """Class to handle S3DIS dataset."""
 
-    def __init__(self, config, cloud_path, tree_path, use_potentials=True):
+    def __init__(self, config, cloud_path, search_tree, use_potentials=True):
         PointCloudDataset.__init__(self, 'Inference')
         self.config = config
         self.potentials = None
@@ -69,7 +69,6 @@ class InferenceDataset(PointCloudDataset):
 
         # Proportion of validation scenes, set by whom and when ?
         self.cloud_names = [cloud_path]
-        self.tree_names = [tree_path]
         self.all_splits = [0]
         self.validation_split = [0]
 
@@ -77,10 +76,7 @@ class InferenceDataset(PointCloudDataset):
         self.epoch_n = config.validation_size * config.batch_num
 
         # Initiate containers
-        self.input_trees = []
-        for tn in self.tree_names:
-            with open(tn, 'rb') as f:
-                self.input_trees.append(pickle.load(f))
+        self.input_trees = [search_tree]
         self.input_features = []
         self.input_labels = []
 
@@ -109,18 +105,11 @@ class InferenceDataset(PointCloudDataset):
             pot_dl = self.config.in_radius / self.config.pot_sample_mult
             cloud_ind = 0
 
-            for i, file_path in enumerate(self.tree_names):
-                coarse_KDTree_file = file_path.parent / '{:s}_coarse.pkl'.format(file_path.stem)
-                if exists(coarse_KDTree_file):
-                    with open(coarse_KDTree_file, 'rb') as f:
-                        search_tree = pickle.load(f)
-                else:
-                    # Subsample cloud
-                    sub_points = np.array(self.input_trees[cloud_ind].data, copy=False)
-                    coarse_points = grid_subsampling(sub_points.astype(np.float32), sampleDl=pot_dl)
-                    search_tree = KDTree(coarse_points, leaf_size=10)
-                    with open(coarse_KDTree_file, 'wb') as f:
-                        pickle.dump(search_tree, f)
+            for i in range(len(self.input_trees)):
+                # Coarse potential locations (cheap, not cached)
+                sub_points = np.array(self.input_trees[cloud_ind].data, copy=False)
+                coarse_points = grid_subsampling(sub_points.astype(np.float32), sampleDl=pot_dl)
+                search_tree = KDTree(coarse_points, leaf_size=10)
 
                 # Fill data containers
                 self.pot_trees += [search_tree]

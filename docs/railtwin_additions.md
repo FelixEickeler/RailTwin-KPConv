@@ -66,6 +66,8 @@ The main differences from S3DIS:
 - Pre-processed data (subsampled clouds, KD-trees, projections) is cached in `self.work_dir`.
   The cache is in `input_<first_subsampling_dl>/` (e.g. `input_0.020/`) and is rebuilt when files are missing.
   The KD-trees are sklearn pickles: after a scikit-learn upgrade, delete that folder once.
+  The reprojection of validation clouds onto the subsampled points uses `nearest_indices` (`datasets/common.py`),
+  same result as the sklearn query, on all cores.
 
 | File | Dataset / purpose |
 |---|---|
@@ -110,7 +112,7 @@ To switch the dataset or split, change the `import ... as RailTwinDatasetECPPM20
 | `utils/trainer_railtwin.py` | `ModelTrainer` with `train_with_unfreeze_schedule()`, TensorBoard logging (`SummaryWriter`, confusion-matrix images through `utils/plot_cm.py`). Can fine-tune from a checkpoint or resume a run (`finetune`, `continue_epoch`). Checkpoints are found by `utils/checkpoints.py` (newest `*.tar` of a run folder, usually `current_chkp.tar`), the same rule for resuming, fine-tuning and prediction. |
 | `test_models.py` | Argparse CLI (`log_dir`, `model_path`, `out_dir`, `val`, `dataset_overwrite`). Supports the datasets `rtib+`, `RailTwin` and `-rtib`. |
 | `test_railtwin.py` | Inference CLI: `-m` model, `-i` input file or folder, `-o` output, `-gid` GPU. Reads clouds through `railtwin_common` IO. |
-| `utils/predictor.py` | `Predictor`: subsamples, runs KPFCNN over `InferenceDataset`, and maps predictions back to the full cloud with `KnnVoting`. Writes PLY files with `railtwin_common`. |
+| `utils/predictor.py` | `Predictor`: subsamples, runs KPFCNN over `InferenceDataset`, and maps predictions back to the full cloud with a weighted 5-NN vote (`utils/voting.py`, scipy `cKDTree` on all cores: about 6 min instead of 1.5 h for 1e9 points). The KD-tree is passed to `InferenceDataset` directly, not pickled. Writes PLY files with `railtwin_common`. |
 
 ### 2.4b Training options (from the literature review, `docs/literature_review_training.md`)
 

@@ -6,7 +6,6 @@
 #
 import hashlib
 import os
-import pickle
 import shutil
 import time
 from pathlib import Path
@@ -76,7 +75,7 @@ class Predictor:
         self.softmax = torch.nn.Softmax(1)
         self.num_votes = 100 #100
 
-    def subsample(self, pointcloud, tree_path, cache_name):
+    def subsample(self, pointcloud, cache_name):
         # subsample
         logger.info("Subsampling points...")
         dl = self.config.first_subsampling_dl
@@ -93,14 +92,12 @@ class Predictor:
             pandas.DataFrame(labels, columns=self.config.pred_names, dtype=np.int32))
 
         search_tree = KDTree(points, leaf_size=10)
-        with open(tree_path, 'wb') as f:
-            pickle.dump(search_tree, f)
 
-        cloud_path = tree_path.parent / f"{cache_name}.ply"
+        cloud_path = self.folder / f"{cache_name}.ply"
         io_options = IOOptions.do_nothing()
         io_options.binary = True
         ply_writer(cloud_path, subsampled, io_options)
-        return cloud_path, subsampled, features, labels
+        return cloud_path, subsampled, search_tree, features, labels
 
     def infer(self, test_loader, dataset, subsampled, inference_path):
 
@@ -202,16 +199,13 @@ class Predictor:
         local_cloud[xyz_names] = full_xyz - offset
 
         inference_path = self.folder / f"{cache_name}_predictions.ply"
-        tree_folder = self.folder  # / "KDTrees"
-        tree_path = tree_folder / '{}_KDTree_{:.3f}.pkl'.format(cache_name, self.config.first_subsampling_dl)
 
         if not inference_path.exists():
             # subsample
-            subsampled_path, subsampled, features, labels = self.subsample(pointcloud=local_cloud, tree_path=tree_path, cache_name=cache_name)
+            subsampled_path, subsampled, search_tree, features, labels = self.subsample(pointcloud=local_cloud, cache_name=cache_name)
 
             # Setup Dataset
-            tree_folder.mkdir(parents=True, exist_ok=True)
-            dataset = InferenceDataset(self.config, cloud_path=subsampled_path, tree_path=tree_path, use_potentials=True)
+            dataset = InferenceDataset(self.config, cloud_path=subsampled_path, search_tree=search_tree, use_potentials=True)
             dataset.input_features = [features]  # subsampled[self.config.features[3:]]
             dataset.input_labels = [labels]  # subsampled[self.config.pred_names]
             sampler = InferenceSampler(dataset)

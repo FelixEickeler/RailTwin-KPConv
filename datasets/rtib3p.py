@@ -41,7 +41,7 @@ from datasets.common import PointCloudDataset
 from torch.utils.data import Sampler, get_worker_info
 from utils.mayavi_visu import *
 
-from datasets.common import grid_subsampling
+from datasets.common import grid_subsampling, nearest_indices
 from utils.config import bcolors
 
 
@@ -927,7 +927,7 @@ class RTIB3p(PointCloudDataset):
                     labels = data['system']
 
                     # Compute projection inds
-                    idxs = self.input_trees[i].query(points, return_distance=False)
+                    idxs = nearest_indices(self.input_trees[i], points)
                     # dists, idxs = self.input_trees[i_cloud].kneighbors(points)
                     proj_inds = np.squeeze(idxs).astype(np.int32)
 
