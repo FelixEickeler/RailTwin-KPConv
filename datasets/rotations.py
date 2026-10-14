@@ -18,24 +18,18 @@ import numpy as np
 
 from kernels.kernel_points import create_3D_rotations
 
-# Default of the 'pendulum_legacy' mode when config.augment_rotation_yaw is not set
-PENDULUM_DEFAULT_YAW = 0.028
 
-
-def random_rotation(mode, pendulum_yaw=None, max_tilt=10.0):
+def random_rotation(mode, max_tilt=10.0):
     """
     Draw a random 3x3 rotation matrix.
 
-    :param mode: 'none', 'vertical', 'all', 'pendulum' or 'pendulum_legacy'
+    :param mode: 'none', 'vertical', 'all' or 'pendulum'
         - 'vertical': random rotation around the z-axis.
         - 'all': uniformly random 3D rotation.
         - 'pendulum': random rotation around the z-axis plus a swing of at most max_tilt degrees around a random
           horizontal axis, like a pendulum swinging below its pivot. The z-axis stays within max_tilt degrees of
-          vertical.
-        - 'pendulum_legacy': the 'pendulum' of the original RailTwin code, kept bit-identical to reproduce old
-          trainings. It rotates by a random angle in [0, 2pi) around an axis whose elevation is limited to
-          +-pendulum_yaw * 90 deg, i.e. around an almost horizontal axis, which often turns the cloud upside down.
-    :param pendulum_yaw: 'pendulum_legacy' only, config.augment_rotation_yaw / 360 (None = PENDULUM_DEFAULT_YAW)
+          vertical. (The original RailTwin 'pendulum' often turned the cloud upside down; it is in the git history
+          before 2026-10-14 as 'pendulum_legacy'.)
     :param max_tilt: 'pendulum' only, swing amplitude in degrees
     :return: float32[3, 3]
     """
@@ -45,15 +39,10 @@ def random_rotation(mode, pendulum_yaw=None, max_tilt=10.0):
         c, s = np.cos(theta), np.sin(theta)
         R = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]], dtype=np.float32)
 
-    elif mode in ('all', 'pendulum_legacy'):
-        if mode == 'pendulum_legacy':
-            yaw = PENDULUM_DEFAULT_YAW if pendulum_yaw is None else pendulum_yaw
-        else:
-            yaw = 1
-
+    elif mode == 'all':
         # Choose two random angles for the first vector in polar coordinates
         theta = np.random.rand() * 2 * np.pi
-        phi = (np.random.rand() - 0.5) * np.pi * yaw
+        phi = (np.random.rand() - 0.5) * np.pi
 
         # Create the first vector in carthesian coordinates
         u = np.array([np.cos(theta) * np.cos(phi), np.sin(theta) * np.cos(phi), np.sin(phi)])
@@ -76,7 +65,10 @@ def random_rotation(mode, pendulum_yaw=None, max_tilt=10.0):
         tilt = (np.random.rand() * 2 - 1) * np.deg2rad(max_tilt)
         R = create_3D_rotations(axis, np.reshape(tilt, (1, -1)))[0] @ Rz
 
-    else:
+    elif mode == 'none':
         R = np.eye(3)
+
+    else:
+        raise ValueError(f"Unknown augment_rotation '{mode}', use 'none', 'vertical', 'all' or 'pendulum'")
 
     return R.astype(np.float32)

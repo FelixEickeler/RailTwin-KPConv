@@ -342,9 +342,7 @@ class PointCloudDataset(Dataset):
         R = np.eye(points.shape[1])
 
         if points.shape[1] == 3:
-            yaw = self.config.augment_rotation_yaw
-            R = random_rotation(self.config.augment_rotation, pendulum_yaw=None if yaw is None else yaw / 360,
-                                max_tilt=self.config.augment_rotation_max_tilt)
+            R = random_rotation(self.config.augment_rotation, max_tilt=self.config.augment_rotation_max_tilt)
 
         R = R.astype(np.float32)
 

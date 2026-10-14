@@ -178,7 +178,6 @@ class RailTwinConfig(Config):
     augment_scale_anisotropic = True
     augment_symmetries = [True, True, False]
     # 'pendulum': random heading + swing of at most augment_rotation_max_tilt degrees (datasets/rotations.py).
-    # 'pendulum_legacy' reproduces the original RailTwin rotation (often upside down) of older trainings.
     augment_rotation = 'pendulum'
     augment_rotation_max_tilt = 10.0
     augment_scale_min = 0.9

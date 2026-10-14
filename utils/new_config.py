@@ -71,7 +71,6 @@ class Config:
     input_features = None
     drop_features = False
     augment_rotation_max_tilt = 10.0
-    augment_rotation_yaw = None
     augment_mix3d = 0.0
     augment_als = 0.0                           # share of training spheres from the ALS emulation
     augment_als_versions = 2                    # ALS versions per training cloud, headings spread over 180 deg

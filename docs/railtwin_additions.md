@@ -85,7 +85,7 @@ To switch the dataset or split, change the `import ... as RailTwinDatasetECPPM20
 | File | Change |
 |---|---|
 | `datasets/features.py` | Input features chosen by name: `input_features = ['above_ground']` (names: `above_ground`, `intensity`, `height`; `[]` = geometry only), `in_features_dim = 1 + len(input_features)`. Feature dropout (`augment_color`) only for training. `drop_features` zeroes them, e.g. for prediction on data without them (`test_railtwin.py --drop-features`). |
-| `datasets/common.py`, `datasets/rotations.py` | Rotations moved to `random_rotation()`. `augment_rotation = 'pendulum'`: random heading plus a swing of at most `augment_rotation_max_tilt` degrees (default 10) around a random horizontal axis, like a pendulum below its pivot. `'pendulum_legacy'` is the original RailTwin rotation, kept bit-identical for old trainings: a random angle in 0..360° around an almost horizontal axis, which often turns the cloud upside down. |
+| `datasets/common.py`, `datasets/rotations.py` | Rotations moved to `random_rotation()`. `augment_rotation = 'pendulum'`: random heading plus a swing of at most `augment_rotation_max_tilt` degrees (default 10) around a random horizontal axis, like a pendulum below its pivot. The original RailTwin rotation (a random angle in 0..360° around an almost horizontal axis, often upside down) was removed on 2026-10-14; it is in the git history as `'pendulum_legacy'`. Unknown modes raise an error. |
 | `utils/ply.py` | `parse_header` reads an optional `element offset` (3× `f8`) block before the vertices and only collects properties of the `vertex` element. It now returns `(num_points, num_offset, properties)`. The offset is read but not applied yet. |
 | `utils/config.py` | Commented-out stub for saving dataset and label parameters. |
 | `utils/trainer.py` | Whitespace only. |
@@ -217,9 +217,10 @@ Run them with `python -m pytest tests/` (needs numpy, matplotlib and pytest; tor
 not required).
 
 - `test_rotations.py`:
-  - `'pendulum_legacy'` is bit-identical to the original `'pendulum'`;
-  - documents its upside-down rotations;
-  - checks the bounds of the corrected `'pendulum'`.
+  - all modes give proper rotations, `'vertical'` keeps the z-axis;
+  - `'pendulum'` is bounded by `augment_rotation_max_tilt`, with heading and swing direction covering the full
+    circle;
+  - unknown modes raise an error.
 - `test_als_augmentation.py`:
   - prepared versions: deterministic, identical to the emulation;
   - the cache is reused and recomputed when the settings change;

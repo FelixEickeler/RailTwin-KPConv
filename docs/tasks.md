@@ -16,19 +16,14 @@ From the simplicity review (2026-10-14).
   - Resuming a run: `-ptp <run>` in every training script. This now works with relative paths as well, and
     resuming loads the run's `parameters.json`.
 - **SSH:** `SSH_PASSWORD=slice` stays in `.env.example` for the PyCharm login.
-
-## Open, needs a decision
-
-- [ ] **`pendulum_legacy` rotation.** It is only needed to reproduce old trainings exactly. If none will be re-run,
-  remove it from `datasets/rotations.py`, together with `augment_rotation_yaw` and the tests that check it is
-  identical to the old code. Saves about 10 lines and 2 tests.
-- [ ] **`RailTwin_static` import fallback** in `train_railtwin.py`. Today it silently switches to `rtib3p` when
-  `RailTwin_static` is missing. Import `rtib3p` directly once it is clear that `RailTwin_static` will not come back.
-- [ ] **`RTIB3pCustomBatch`/`RTIB3pCollate`** (`datasets/rtib3p.py`, about 140 lines) is a copy of the S3DIS batch
-  class, made to remove the dependency on S3DIS. Option: move it once to `datasets/common.py`, so S3DIS and RailTwin
-  share it. This touches the upstream file `S3DIS.py`, which makes future upstream syncs harder.
+- **`pendulum_legacy` removed:** training is on real data now. The old rotation is in the git history; unknown
+  `augment_rotation` values raise an error instead of silently not rotating.
 
 ## Not done, on purpose
 
+- **`RailTwin_static` import fallback** in `train_railtwin.py` stays until it is clear whether `RailTwin_static`
+  comes back. Without it, the script falls back to `rtib3p` (with a warning).
+- **`RTIB3pCustomBatch`/`RTIB3pCollate`** (`datasets/rtib3p.py`) stays a copy of the S3DIS batch class. Sharing it
+  would mean changing the upstream file `S3DIS.py` and make future upstream syncs harder.
 - **A name for the 8.9 m reference radius of `expected_N`:** it would touch the 7 `rtib3p*` dataset files (to be
   reworked when needed), and the comment next to each formula already explains it.
