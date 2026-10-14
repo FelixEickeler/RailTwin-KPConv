@@ -210,26 +210,10 @@ class RailTwinConfig(Config):
     # (out-of-context augmentation, +0.7 to +1.5 mIoU measured with KPConv). 0 = off.
     augment_mix3d = 0.3
 
-    # ALS augmentation (utils/als_simulation.py): mixes ALS-like samples into the training.
-    # augment_als = share of training spheres taken from an ALS emulation (0 = off).
-    # 'prepared': at dataset load, augment_als_versions ALS versions of every training cloud are computed once
-    #             (flight strips over the whole cloud, headings spread over 180 deg) and cached in work_dir.
-    # 'online':   each sphere is emulated on the fly from one of augment_als_planes (only the sphere occludes).
+    # ALS augmentation (utils/als_simulation.py): share of training spheres taken from an ALS emulation, 0 = off.
+    # At dataset load, ALS versions of every training cloud are computed once (flight strips over the whole cloud)
+    # and cached in work_dir. Settings of the emulation (augment_als_*): see utils/new_config.py.
     augment_als = 0.0
-    augment_als_mode = 'prepared'
-    augment_als_versions = 2
-    augment_als_height = 100.0              # [m] flying height above the lowest point
-    augment_als_max_scan_angle = 30.0       # [deg] half swath angle
-    augment_als_side_overlap = 0.3          # overlap of neighbouring flight strips
-    augment_als_footprint = 0.3             # [m] beam footprint
-    augment_als_returns = 1                 # returns per beam
-    augment_als_voxel = None                # [m] voxel mode
-    augment_als_planes = [                  # 'online' only: height [m], off_nadir [deg] or offset [m]
-        {'height': 100.0, 'off_nadir': 0.0},
-        {'height': 100.0, 'off_nadir': 15.0},
-        {'height': 100.0, 'off_nadir': 25.0},
-    ]
-    augment_als_random_heading = True       # 'online' only
 
     # The way we balance segmentation loss
     #   > 'none': Each point in the whole batch has the same contribution.

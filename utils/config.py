@@ -156,8 +156,7 @@ class Config:
     augment_rotation_max_tilt = 10.0      # 'pendulum' rotation: swing in degrees
     augment_rotation_yaw = None           # 'pendulum_legacy' rotation
     augment_mix3d = 0.0                   # Mix3D probability
-    augment_als = 0.0                     # ALS emulation probability
-    augment_als_mode = 'prepared'
+    augment_als = 0.0                     # ALS emulation probability (settings: utils/new_config.py)
     segmentation_loss = {'cross_entropy': 1.0}
     label_smoothing = 0.0
     balance_classes = False               # class-balanced sphere centres instead of potentials

@@ -406,7 +406,7 @@ class RTIB3p(PointCloudDataset):
                 continue
 
             # ALS emulation (training only): keep what one of the configured flight planes would see
-            als_mask = self.als_augmentation(cloud_ind, input_inds, points, center_point)
+            als_mask = self.als_augmentation(cloud_ind, input_inds)
             if als_mask is not None:
                 input_inds = input_inds[als_mask]
                 n = input_inds.shape[0]
@@ -609,7 +609,7 @@ class RTIB3p(PointCloudDataset):
                 continue
 
             # ALS emulation (training only): keep what one of the configured flight planes would see
-            als_mask = self.als_augmentation(cloud_ind, input_inds, points, center_point)
+            als_mask = self.als_augmentation(cloud_ind, input_inds)
             if als_mask is not None:
                 input_inds = input_inds[als_mask]
                 n = input_inds.shape[0]

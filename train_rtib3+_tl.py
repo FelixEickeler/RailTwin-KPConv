@@ -124,7 +124,7 @@ def train_railtwin(working_path, previous_training_path=Path(''), pretrained_pat
     if working_path.exists():
         config.saving_path = str(working_path)
 
-    # Command line overrides (e.g. --in-radius for sphere size experiments). Set on the class, because
+    # Command line overrides (e.g. --in-radius for sphere size experiments)
     for key, value in (overrides or {}).items():
         print(f"Config override: {key} = {value}")
         setattr(config, key, value)
@@ -211,8 +211,6 @@ if __name__ == '__main__':
     parser.add_argument('-o', '--results', type=Path, help="Path to wherever everything happens", default="~/workdir")
     parser.add_argument('-ptp', '--chkp_path', type=Path, help="Run folder or checkpoint to resume (weights, optimizer, epoch)", default="/default/thing/that/does/not/exist")
     parser.add_argument('-pt', '--pretrained', type=Path, help="Run folder or checkpoint of the pre-training (weights only, starts the unfreeze schedule at epoch 0)", default=None)
-    parser.add_argument('-ft', "--fine_tune", action='store_true', default=False,
-                        help="Deprecated: same as --pretrained <results>, i.e. the pre-trained checkpoint was copied into the output folder")
     parser.add_argument('-gid', "--gpu_id", type=str, default=None)
     parser.add_argument('-r', '--in-radius', type=float, default=None,
                         help="Override config.in_radius [m] (input sphere radius), e.g. for 2.5 / 4 / 6 m experiments")
@@ -226,8 +224,6 @@ if __name__ == '__main__':
     # args.chkp_path  = ""
 
     pretrained = args.pretrained.expanduser() if args.pretrained else None
-    if args.fine_tune and pretrained is None:
-        pretrained = args.results.expanduser()
     overrides = {'in_radius': args.in_radius} if args.in_radius is not None else {}
     if args.schedule == 'real':
         overrides['unfreeze_schedule'] = RailTwinConfig.unfreeze_schedule_real

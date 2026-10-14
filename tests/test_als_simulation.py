@@ -4,8 +4,7 @@ Tests for the ALS emulation (utils/als_simulation.py) on small synthetic scenes.
 import numpy as np
 import pytest
 
-from utils.als_simulation import (ALSConfig, FlightLine, emulate_als, flight_line_returns, random_flight_lines,
-                                  voxel_subsample)
+from utils.als_simulation import ALSConfig, FlightLine, emulate_als, flight_line_returns, voxel_subsample
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -72,7 +71,7 @@ def test_roof_hides_the_ground_below(building_scene):
 
 def test_swath_is_limited_by_max_scan_angle():
     line = grid((-0.05, 0.05), (-100, 100), 0.1)
-    config = ALSConfig(flight_lines=[FlightLine(height=100.0, max_scan_angle=10.0)], reference_height=0.0)
+    config = ALSConfig(flight_lines=[FlightLine(height=100.0, max_scan_angle=10.0)])
     mask = emulate_als(line, config)
     half_swath = 100.0 * np.tan(np.deg2rad(10.0))
     assert np.all(mask == (np.abs(line[:, 1]) <= half_swath - 0.05)) or \
@@ -134,17 +133,6 @@ def test_georeferenced_coordinates(building_scene):
     assert np.mean(emulate_als(points, config) == emulate_als(shifted, config)) > 0.999
 
 
-def test_random_flight_lines_see_the_centre():
-    rng = np.random.default_rng(0)
-    lines = random_flight_lines(50, rng=rng)
-    for line in lines:
-        assert 80 <= line.height <= 120
-        off_nadir = np.degrees(np.arctan2(abs(line.offset), line.height))
-        assert off_nadir <= 25.0 + 1e-6
-        returns = flight_line_returns(np.zeros((1, 3)), line, reference_height=0.0)
-        assert returns[0] == 1
-
-
 # ----------------------------------------------------------------------------------------------------------------------
 # Multiple returns
 # ----------------------------------------------------------------------------------------------------------------------
@@ -184,28 +172,8 @@ def test_return_separation_must_exceed_tolerance():
 
 
 # ----------------------------------------------------------------------------------------------------------------------
-# Voxel mode
+# Voxel subsampling (ALS point spacing)
 # ----------------------------------------------------------------------------------------------------------------------
-
-def test_voxel_mode_is_constant_within_a_voxel(building_scene):
-    points, labels = building_scene
-    voxel = 0.5
-    mask = emulate_als(points, ALSConfig(voxel_size=voxel))
-    centred = points.copy()
-    centred[:, :2] -= (points[:, :2].min(axis=0) + points[:, :2].max(axis=0)) / 2
-    _, inverse = np.unique(np.floor(centred / voxel).astype(np.int64), axis=0, return_inverse=True)
-    inverse = inverse.ravel()
-    per_voxel_min = np.bincount(inverse, weights=mask) / np.bincount(inverse)
-    assert np.all((per_voxel_min == 0) | (per_voxel_min == 1))
-
-
-def test_voxel_mode_keeps_occlusion(building_scene):
-    points, labels = building_scene
-    below_roof = (labels == 'ground') & (np.abs(points[:, 0]) < 4.0) & (np.abs(points[:, 1]) < 4.0)
-    mask = emulate_als(points, ALSConfig(voxel_size=0.5))
-    assert frac(mask, labels == 'roof') > 0.95
-    assert frac(mask, below_roof) == 0.0
-
 
 def test_voxel_subsample_one_point_per_voxel():
     rng = np.random.default_rng(1)
@@ -235,7 +203,7 @@ def test_empty_input():
 
 def test_chunked_processing_gives_the_same_result(building_scene):
     points, _ = building_scene
-    for line in [FlightLine(), FlightLine(heading=30.0, offset=40.0), FlightLine(heading=200.0, offset=-25.0, pitch=8)]:
+    for line in [FlightLine(), FlightLine(heading=30.0, offset=40.0), FlightLine(heading=200.0, offset=-25.0)]:
         full = flight_line_returns(points, line, reference_height=0.0, max_returns=2)
         chunked = flight_line_returns(points, line, reference_height=0.0, max_returns=2, chunk_points=5000)
         np.testing.assert_array_equal(full, chunked)

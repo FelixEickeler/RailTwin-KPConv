@@ -1,25 +1,24 @@
 """
-Tests for the ALS training augmentation (utils/als_simulation.als_augmentation) and its dataset hook
-(PointCloudDataset.als_augmentation in datasets/common.py).
+Tests for the ALS training augmentation: prepared versions and mixing (utils/als_simulation.py) and the dataset
+methods (PointCloudDataset.prepare_als / als_augmentation in datasets/common.py).
 """
 import ast
-import json
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
-from utils.als_simulation import ALSConfig, FlightLine, als_augmentation, emulate_als, plane_to_flight_line
+from utils.als_simulation import ALSConfig, emulate_als
 from test_als_simulation import box, ground
 
 GEO = np.array([691000.0, 5334000.0, 520.0])
 
 
 def make_config(**kwargs):
-    defaults = dict(augment_als=1.0, augment_als_planes=[{'height': 100.0, 'off_nadir': 0.0}],
-                    augment_als_random_heading=True, augment_als_footprint=0.3, augment_als_returns=1,
-                    augment_als_voxel=None)
+    defaults = dict(augment_als=1.0, augment_als_versions=2, augment_als_height=100.0, augment_als_max_scan_angle=30.0,
+                    augment_als_side_overlap=0.3, augment_als_footprint=0.3, augment_als_returns=1,
+                    augment_als_min_points=2)
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
 
@@ -37,122 +36,6 @@ def sphere():
 
 
 # ----------------------------------------------------------------------------------------------------------------------
-# Plane definitions
-# ----------------------------------------------------------------------------------------------------------------------
-
-def test_off_nadir_is_converted_to_an_offset():
-    line = plane_to_flight_line({'height': 100.0, 'off_nadir': 20.0, 'heading': 0.0})
-    assert line.offset == pytest.approx(100.0 * np.tan(np.deg2rad(20.0)))
-    assert line.heading == 0.0
-
-
-def test_offset_has_priority_and_defaults():
-    line = plane_to_flight_line({'offset': -12.0}, random_heading=False)
-    assert line == FlightLine(heading=0.0, offset=-12.0, height=100.0, max_scan_angle=30.0, pitch=0.0)
-
-
-def test_random_heading_only_without_fixed_heading():
-    np.random.seed(0)
-    headings = [plane_to_flight_line({}).heading for _ in range(200)]
-    assert min(headings) >= 0.0 and max(headings) < 360.0 and np.std(headings) > 50
-    assert plane_to_flight_line({'heading': 45.0}).heading == 45.0
-
-
-def test_planes_survive_json_round_trip(sphere):
-    """Configs are saved as parameters.json, the plane list must still work after loading."""
-    points, _, center = sphere
-    config = make_config(augment_als_planes=json.loads(json.dumps(make_config().augment_als_planes)))
-    np.random.seed(0)
-    assert als_augmentation(points, config, center=center[:2]) is not None
-
-
-# ----------------------------------------------------------------------------------------------------------------------
-# Augmentation
-# ----------------------------------------------------------------------------------------------------------------------
-
-def test_disabled_draws_no_random_numbers(sphere):
-    points, _, center = sphere
-    for config in [make_config(augment_als=0.0), SimpleNamespace()]:
-        np.random.seed(3)
-        assert als_augmentation(points, config, center=center[:2]) is None
-        assert np.random.rand() == np.random.RandomState(3).rand()
-
-
-def test_probability(sphere):
-    points, _, center = sphere
-    config = make_config(augment_als=0.3)
-    np.random.seed(0)
-    applied = [als_augmentation(points, config, center=center[:2]) is not None for _ in range(300)]
-    assert np.mean(applied) == pytest.approx(0.3, abs=0.08)
-
-
-def test_matches_emulation_with_the_same_flight_line(sphere):
-    points, _, center = sphere
-    plane = {'height': 100.0, 'off_nadir': 20.0, 'heading': 30.0}
-    expected = emulate_als(points, ALSConfig(flight_lines=[plane_to_flight_line(plane)], center=tuple(center[:2])))
-    np.random.seed(0)
-    mask = als_augmentation(points, make_config(augment_als_planes=[plane]), center=center[:2])
-    np.testing.assert_array_equal(mask, expected)
-
-
-def test_picks_each_plane(sphere):
-    points, _, center = sphere
-    planes = [{'height': 100.0, 'off_nadir': -20.0, 'heading': 0.0},
-              {'height': 100.0, 'off_nadir': 0.0, 'heading': 0.0},
-              {'height': 100.0, 'off_nadir': 20.0, 'heading': 0.0}]
-    references = [emulate_als(points, ALSConfig(flight_lines=[plane_to_flight_line(p)], center=tuple(center[:2])))
-                  for p in planes]
-    # The three planes give three different results
-    assert len({r.tobytes() for r in references}) == 3
-
-    config = make_config(augment_als_planes=planes)
-    np.random.seed(0)
-    counts = np.zeros(3)
-    for _ in range(90):
-        mask = als_augmentation(points, config, center=center[:2])
-        counts[[i for i, r in enumerate(references) if np.array_equal(mask, r)]] += 1
-    assert counts.sum() == 90
-    assert counts.min() > 15
-
-
-def test_oblique_plane_reveals_the_facing_facade(sphere):
-    points, labels, center = sphere
-    # off_nadir +20 deg with heading 0: track on the +y side (left of the heading)
-    config = make_config(augment_als_planes=[{'height': 100.0, 'off_nadir': 20.0, 'heading': 0.0}])
-    np.random.seed(0)
-    mask = als_augmentation(points, config, center=center[:2])
-    assert mask[labels == 'facade+y'].mean() > 0.8
-    assert mask[(labels == 'facade-y') & (points[:, 2] - GEO[2] < 5.0)].mean() == 0.0
-    nadir = als_augmentation(points, make_config(), center=center[:2])
-    assert nadir[labels == 'facade+y'].mean() < 0.2
-
-
-def test_same_seed_same_result(sphere):
-    points, _, center = sphere
-    config = make_config(augment_als_planes=[{'off_nadir': 0.0}, {'off_nadir': 20.0}])
-    np.random.seed(5)
-    a = [als_augmentation(points, config, center=center[:2]) for _ in range(5)]
-    np.random.seed(5)
-    b = [als_augmentation(points, config, center=center[:2]) for _ in range(5)]
-    for x, y in zip(a, b):
-        np.testing.assert_array_equal(x, y)
-
-
-def test_numpy_generator(sphere):
-    points, _, center = sphere
-    mask = als_augmentation(points, make_config(), center=center[:2], rng=np.random.default_rng(0))
-    assert mask is not None and mask.any()
-
-
-def test_too_few_remaining_points_keeps_the_sample():
-    # Everything far across the track, outside the swath: nothing would remain
-    points = np.array([[0.0, 500.0, 0.0], [0.0, -500.0, 0.0], [10.0, 400.0, 0.0]])
-    config = make_config(augment_als_planes=[{'heading': 0.0, 'max_scan_angle': 5.0}])
-    np.random.seed(0)
-    assert als_augmentation(points, config, center=(0.0, 0.0)) is None
-
-
-# ----------------------------------------------------------------------------------------------------------------------
 # Dataset methods (datasets/common.py), loaded without importing torch / the C++ wrappers
 # ----------------------------------------------------------------------------------------------------------------------
 
@@ -166,7 +49,7 @@ def load_method(name, **namespace):
     cls = next(n for n in ast.parse(source).body if isinstance(n, ast.ClassDef) and n.name == 'PointCloudDataset')
     fn = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == name)
     fn.name = '_method'  # as a method it does not shadow module functions of the same name
-    defaults = dict(np=np, time=_time, als_augmentation=als_module.als_augmentation,
+    defaults = dict(np=np, time=_time,
                     prepare_als_versions=als_module.prepare_als_versions,
                     prepared_als_mask=als_module.prepared_als_mask,
                     prepared_als_settings=als_module.prepared_als_settings)
@@ -181,45 +64,25 @@ class FakeTree:
 
 
 def fake_dataset(tmp_path, clouds, split='training', **config):
-    cfg = make_config(**{'augment_als_mode': 'prepared', 'augment_als_versions': 2, 'first_subsampling_dl': 0.04,
-                         **config})
+    cfg = make_config(**{'first_subsampling_dl': 0.04, **config})
     return SimpleNamespace(set=split, config=cfg, work_dir=str(tmp_path), cloud_names=list(clouds),
                            input_trees=[FakeTree(p) for p in clouds.values()])
 
 
 @pytest.mark.parametrize('split', ['validation', 'test', 'ERF'])
 def test_hook_only_for_training(sphere, split):
-    points, _, center = sphere
+    points, _, _ = sphere
     hook = load_method('als_augmentation')
-    inds = np.arange(len(points))
-    for mode in ['online', 'prepared']:
-        ds = SimpleNamespace(set=split, config=make_config(augment_als_mode=mode), als_versions=None)
-        assert hook(ds, 0, inds, points, center.reshape(1, -1)) is None
-
-
-def test_online_hook_uses_the_sphere_centre(sphere):
-    points, labels, center = sphere
-    hook = load_method('als_augmentation')
-    config = make_config(augment_als_mode='online',
-                         augment_als_planes=[{'height': 100.0, 'off_nadir': 20.0, 'heading': 0.0}])
-    # The whole cloud is passed together with the indices of the sphere
-    padding = np.array([[1e3, 1e3, 0.0]]) + GEO
-    cloud = np.concatenate([padding, points])
-    inds = np.arange(1, len(cloud))
-    np.random.seed(0)
-    mask = hook(SimpleNamespace(set='training', config=config), 0, inds, cloud, center.reshape(1, -1))
-    np.random.seed(0)
-    expected = als_augmentation(points, config, center=center[:2])
-    np.testing.assert_array_equal(mask, expected)
-    assert mask[labels == 'facade+y'].mean() > 0.8
+    versions = [np.packbits(np.ones((2, len(points)), dtype=bool), axis=1)]
+    ds = SimpleNamespace(set=split, config=make_config(), als_versions=versions)
+    assert hook(ds, 0, np.arange(len(points))) is None
 
 
 # ----------------------------------------------------------------------------------------------------------------------
 # Prepared versions: preparation step + mixing
 # ----------------------------------------------------------------------------------------------------------------------
 
-SETTINGS = dict(versions=3, height=100.0, max_scan_angle=30.0, side_overlap=0.3, footprint=0.3, returns=1, voxel=None,
-                algorithm=1)
+SETTINGS = dict(versions=3, height=100.0, max_scan_angle=30.0, side_overlap=0.3, footprint=0.3, returns=1, algorithm=1)
 
 
 def test_prepare_versions_shape_and_determinism(sphere):
@@ -308,8 +171,7 @@ def test_preparation_step_caches(tmp_path, sphere):
     assert len(calls) == 4 and ds3.als_versions[0].shape[0] == 3
 
 
-@pytest.mark.parametrize('split, config', [('validation', {}), ('training', {'augment_als': 0.0}),
-                                           ('training', {'augment_als_mode': 'online'})])
+@pytest.mark.parametrize('split, config', [('validation', {}), ('training', {'augment_als': 0.0})])
 def test_preparation_step_skipped(tmp_path, sphere, split, config):
     points, _, _ = sphere
     prepare = load_method('prepare_als')
@@ -320,13 +182,13 @@ def test_preparation_step_skipped(tmp_path, sphere, split, config):
 
 
 def test_prepared_hook_uses_the_cloud_versions(tmp_path, sphere):
-    points, _, center = sphere
+    points, _, _ = sphere
     clouds = {'cloud_a': points[::3], 'cloud_b': points}
     ds = fake_dataset(tmp_path, clouds)
     load_method('prepare_als')(ds)
     hook = load_method('als_augmentation')
     inds = np.arange(0, len(points), 5)
     np.random.seed(0)
-    mask = hook(ds, 1, inds, points, center.reshape(1, -1))
+    mask = hook(ds, 1, inds)
     versions = np.unpackbits(ds.als_versions[1], axis=1, count=len(points)).astype(bool)
     assert any(np.array_equal(mask, versions[v, inds]) for v in range(2))

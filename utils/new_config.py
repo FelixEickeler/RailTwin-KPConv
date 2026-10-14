@@ -73,8 +73,14 @@ class Config:
     augment_rotation_max_tilt = 10.0
     augment_rotation_yaw = None
     augment_mix3d = 0.0
-    augment_als = 0.0
-    augment_als_mode = 'prepared'
+    augment_als = 0.0                           # share of training spheres from the ALS emulation
+    augment_als_versions = 2                    # ALS versions per training cloud, headings spread over 180 deg
+    augment_als_height = 100.0                  # [m] flying height above the lowest point
+    augment_als_max_scan_angle = 30.0           # [deg] half swath angle
+    augment_als_side_overlap = 0.3              # overlap of neighbouring flight strips
+    augment_als_footprint = 0.3                 # [m] beam footprint
+    augment_als_returns = 1                     # returns per beam (> 1: the beam continues through vegetation)
+    augment_als_min_points = 2                  # keep the original sphere if fewer points would remain
     segmentation_loss = {'cross_entropy': 1.0}
     label_smoothing = 0.0
     balance_classes = False

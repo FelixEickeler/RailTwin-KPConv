@@ -44,6 +44,7 @@ from datasets.rtib3p import RTIB3pSampler as RailTwinSampler
 from datasets.rtib3p import RTIB3pCollate as RailTwinCollate
 from utils.trainer_railtwin import ModelTrainer
 from utils.config_railtwin import RailTwinConfig
+from utils.checkpoints import find_checkpoint
 # from train_S3DIS import S3DISConfig as RailTwinConfig
 
 
@@ -69,26 +70,12 @@ def train_railtwin(working_dir, previous_training_path=Path(''), config_path=Pat
     GPU_ID = ",".join(gpu_ids)
     os.environ['CUDA_VISIBLE_DEVICES'] = GPU_ID
 
-    ###############
-    # Previous chkp
-    ###############
-    # Choose index of checkpoint to start from. If None, uses the latest chkp
-    chkp_idx = None
-    if previous_training_path.exists():
-        # Find all snapshot in the chosen training folder
-        chkp_path = previous_training_path / 'checkpoints'
-        if chkp_path.exists():
-            chkps = [f for f in os.listdir(chkp_path) if f[:4] == 'chkp']
-
-            # Find which snapshot to restore
-            if chkp_idx is None:
-                chosen_chkp = 'current_chkp.tar'
-            else:
-                chosen_chkp = np.sort(chkps)[chkp_idx]
-            chosen_chkp = os.path.join('results', previous_training_path, 'checkpoints', chosen_chkp)
-            print(f"Continuing from: {chosen_chkp}")
-    else:
-        chosen_chkp = None
+    ############
+    # Checkpoint
+    ############
+    chosen_chkp = find_checkpoint(previous_training_path) if previous_training_path.exists() else None
+    if chosen_chkp is not None:
+        print(f"Continuing from: {chosen_chkp}")
 
     ##############
     # Prepare Data
@@ -100,8 +87,11 @@ def train_railtwin(working_dir, previous_training_path=Path(''), config_path=Pat
 
     # Initialize configuration class
     config = RailTwinConfig()
-    if previous_training_path.exists():
-        config.load(os.path.join('results', previous_training_path))
+    # Resuming: use the configuration of that run
+    if chosen_chkp is not None:
+        run_dir = previous_training_path if previous_training_path.is_dir() else previous_training_path.parent.parent
+        if (run_dir / 'parameters.json').exists():
+            config = RailTwinConfig.load(run_dir / 'parameters.json')
         config.saving_path = None
 
     # Get path from argument if given

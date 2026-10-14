@@ -37,6 +37,7 @@ from models.architectures import KPFCNN
 from datasets.rtib3p_16classes import RTIB3p as RailTwinDatasetECPPM2022
 from datasets.rtib3p import RTIB3pSampler as RailTwinSampler
 from datasets.rtib3p import RTIB3pCollate as RailTwinCollate
+from utils.checkpoints import find_checkpoint
 from utils.trainer_railtwin import ModelTrainer
 from utils.config_railtwin import RailTwinConfig
 
@@ -44,11 +45,9 @@ from utils.config_railtwin import RailTwinConfig
 # from train_S3DIS import S3DISConfig as RailTwinConfig
 
 
-def train_railtwin(working_path, previous_training_path=Path(''), fine_tune=False, gid=None, overrides=None):
-    if fine_tune:
-        # not sure about this
-        previous_training_path = working_path
-
+def train_railtwin(working_path, previous_training_path=Path(''), gid=None, overrides=None):
+    """Training from scratch, or resuming the run (folder or checkpoint) previous_training_path.
+    Fine-tuning a pre-trained model: train_rtib3+_tl.py --pretrained."""
     ############################
     # Initialize the environment
     ############################
@@ -75,26 +74,12 @@ def train_railtwin(working_path, previous_training_path=Path(''), fine_tune=Fals
     else:
         os.environ['CUDA_VISIBLE_DEVICES'] = gid
 
-    ###############
-    # Previous chkp
-    ###############
-    # Choose index of checkpoint to start from. If None, uses the latest chkp
-    chkp_idx = None
-    if previous_training_path.exists() and (previous_training_path / 'checkpoints').exists():
-        # Find all snapshot in the chosen training folder
-        chkp_path = previous_training_path / 'checkpoints'
-        if chkp_path.exists():
-            chkps = [f for f in os.listdir(chkp_path) if f[:4] == 'chkp']
-
-            # Find which snapshot to restore
-            if chkp_idx is None:
-                chosen_chkp = 'current_chkp.tar'
-            else:
-                chosen_chkp = np.sort(chkps)[chkp_idx]
-            chosen_chkp = os.path.join('results', previous_training_path, 'checkpoints', chosen_chkp)
-            print(f"Continuing from: {chosen_chkp}")
-    else:
-        chosen_chkp = None
+    ############
+    # Checkpoint
+    ############
+    chosen_chkp = find_checkpoint(previous_training_path) if previous_training_path.exists() else None
+    if chosen_chkp is not None:
+        print(f"Continuing from: {chosen_chkp}")
 
     ##############
     # Prepare Data
@@ -107,16 +92,18 @@ def train_railtwin(working_path, previous_training_path=Path(''), fine_tune=Fals
     # Initialize configuration class
     config = RailTwinConfig()
 
-    # TODO Add new config
-    if previous_training_path.exists() and (previous_training_path / 'parameters.txt').exists():
-        config.load(str(previous_training_path))
+    # Resuming: use the configuration of that run
+    if chosen_chkp is not None:
+        run_dir = previous_training_path if previous_training_path.is_dir() else previous_training_path.parent.parent
+        if (run_dir / 'parameters.json').exists():
+            config = RailTwinConfig.load(run_dir / 'parameters.json')
         config.saving_path = None
 
     # Get path from argument if given
     if working_path.exists():
         config.saving_path = str(working_path)
 
-    # Command line overrides (e.g. --in-radius for sphere size experiments). Set on the class, because
+    # Command line overrides (e.g. --in-radius for sphere size experiments)
     for key, value in (overrides or {}).items():
         print(f"Config override: {key} = {value}")
         setattr(config, key, value)
@@ -184,7 +171,7 @@ def train_railtwin(working_path, previous_training_path=Path(''), fine_tune=Fals
         tb_logdir = Path(config.saving_path) / "logdir"
         cnt = len(list(tb_logdir.glob(date_head + "_*")))
         tb_logdir = tb_logdir / f"{date_head}_experiment_{cnt}"
-    trainer = ModelTrainer(net, config, chkp_path=chosen_chkp, tb_logdir=tb_logdir, finetune=fine_tune)
+    trainer = ModelTrainer(net, config, chkp_path=chosen_chkp, tb_logdir=tb_logdir)
     print('Done in {:.1f}s\n'.format(time.time() - t1))
 
     config.save()
@@ -204,8 +191,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Launch from Docker')
     parser.add_argument('-o', '--results', type=Path, help="Path to wherever everything happens", default="~/workdir")
-    parser.add_argument('-ptp', '--chkp_path', type=Path, help="Checkpoint you want to continue from", default="/default/thing/that/does/not/exist")
-    parser.add_argument('-ft', "--fine_tune", action='store_true', default=False)
+    parser.add_argument('-ptp', '--chkp_path', type=Path, help="Run folder or checkpoint to resume (weights, optimizer, epoch)", default="/default/thing/that/does/not/exist")
     parser.add_argument('-gid', "--gpu_id", type=str, default=None)
     parser.add_argument('-r', '--in-radius', type=float, default=None,
                         help="Override config.in_radius [m] (input sphere radius), e.g. for 2.5 / 4 / 6 m experiments")
@@ -216,5 +202,4 @@ if __name__ == '__main__':
     # args.chkp_path  = ""
 
     overrides = {'in_radius': args.in_radius} if args.in_radius is not None else {}
-    train_railtwin(args.results.expanduser(), args.chkp_path.expanduser(), fine_tune=args.fine_tune, gid=args.gpu_id,
-                   overrides=overrides)  # , args.config_path.expanduser())
+    train_railtwin(args.results.expanduser(), args.chkp_path.expanduser(), gid=args.gpu_id, overrides=overrides)  # , args.config_path.expanduser())

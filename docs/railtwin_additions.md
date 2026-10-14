@@ -103,7 +103,7 @@ To switch the dataset or split, change the `import ... as RailTwinDatasetECPPM20
 | File | Purpose |
 |---|---|
 | `train_railtwin.py` | Generic RailTwin training (uses `datasets.RailTwin_static`, see §3). |
-| `train_rtib3+.py` | Trains from scratch on RTIB3+ (16 classes). Arguments: working path, previous training, `fine_tune`, GPU id. |
+| `train_rtib3+.py` | Trains from scratch on RTIB3+ (16 classes). Arguments: `-o` results folder, `-ptp` run to resume, `-gid` GPU id, `-r` sphere radius. |
 | `train_rtib3+_tl.py` | Transfer learning on `rtib3p_16classes_add_3`. `--pretrained <run\|chkp>` loads weights only (layers whose shape changed, e.g. `head_softmax`, stay initialised) and starts at epoch 0. `-ptp` resumes a run. Training follows `unfreeze_schedule` in `utils/config_railtwin_tl.py`: head_softmax → head_mlp → decoder → encoder (gradual unfreezing). |
 | `utils/trainer_railtwin.py` | `ModelTrainer` with `train_with_unfreeze_schedule()`, TensorBoard logging (`SummaryWriter`, confusion-matrix images through `utils/plot_cm.py`). Can fine-tune from a checkpoint or resume a run (`finetune`, `continue_epoch`). Checkpoints are found by `utils/checkpoints.py` (newest `*.tar` of a run folder, usually `current_chkp.tar`), the same rule for resuming, fine-tuning and prediction. |
 | `test_models.py` | Argparse CLI (`log_dir`, `model_path`, `out_dir`, `val`, `dataset_overwrite`). Supports the datasets `rtib+`, `RailTwin` and `-rtib`. |
@@ -163,15 +163,14 @@ See [`code_review.md`](code_review.md) for a file-by-file review and a list of i
 
 Emulates what an airborne laser scanner would record of a dense MLS / TLS cloud.
 
-- **Flight lines:** straight lines (`FlightLine`: heading, lateral offset, height, max scan angle, pitch), 100 m
-  above the lowest point by default. `random_flight_lines()` draws lines that all see the cloud centre.
+- **Flight lines:** parallel strips that cover the whole cloud (`strip_flight_lines`), 100 m above the lowest point
+  by default. Each strip is a straight `FlightLine` (heading, lateral offset, height, max scan angle).
 - **Visibility:** a slope-tolerant z-buffer in sensor coordinates (along track × scan angle). A point is hidden if
   another point within the beam footprint around its ray is clearly closer. Surfaces seen at a steep angle
   (facades in an oblique view) do not hide themselves.
 - **Returns:** up to `max_returns` per beam. Later returns pass through gaps (vegetation), not through closed
   surfaces.
-- **Voxel mode** (`voxel_size`): visibility is computed per voxel, which is robust to uneven MLS density.
-  `voxel_subsample()` reduces the result to an ALS point spacing.
+- **Point spacing:** `voxel_subsample()` reduces the result to an ALS point spacing (`emulate_als.py --spacing`).
 - **Speed:** about 6 s and 1.5 GB for a 10 M point cloud with 6 flight strips. Long lines are processed in
   chunks with an identical result.
 
@@ -179,12 +178,10 @@ Emulates what an airborne laser scanner would record of a dense MLS / TLS cloud.
 
 ```python
 augment_als = 0.5               # share of training spheres taken from an ALS version (0 = off)
-augment_als_mode = 'prepared'
-augment_als_versions = 2        # ALS versions per training cloud, headings spread over 180 deg
-augment_als_height = 100.0      # flying height above the lowest point [m]
-augment_als_max_scan_angle = 30.0
-augment_als_side_overlap = 0.3
 ```
+
+The emulation settings (`augment_als_versions`, `_height`, `_max_scan_angle`, `_side_overlap`, `_footprint`,
+`_returns`, `_min_points`) have defaults in `utils/new_config.py` and can be overridden in the config.
 
 1. **Preparation step:** when a training dataset is loaded, `PointCloudDataset.prepare_als()` computes the ALS
    versions of every training cloud. Each version is flown in parallel strips over the whole subsampled cloud, so
@@ -203,21 +200,14 @@ augment_als_side_overlap = 0.3
   crown tops a real ALS would record. A sensible start is ALS mixing in the synthetic pre-training
   (`config_railtwin.py`) only.
 
-**Alternative: `augment_als_mode = 'online'`.** Each sphere is emulated on the fly from one random plane of
-`augment_als_planes`. It costs CPU time in the data loader, and only the points inside the sphere occlude.
-- **Plane keys:**
-  - `height` [m] above the lowest point of the sphere;
-  - `off_nadir` [deg], the angle under which the sphere centre is seen (alternatively `offset` [m]);
-  - optional `heading`, `max_scan_angle` and `pitch` [deg].
-
 **Exporting ALS files** (`emulate_als.py`, for inspection or as a separate dataset):
 
 ```bash
-python emulate_als.py -i dataset/synth/rtib3+_16classes -o out/ --strips --versions 2 --suffix _als
+python emulate_als.py -i dataset/synth/rtib3+_16classes -o out/ --versions 2 --suffix _als
 ```
 
-- The options mirror the config: `--strips`, `--side-overlap`, `--random-heading`, `--voxel`, `--spacing` (ALS
-  point spacing) and `--returns`, plus single lines via `--offsets` / `--random-lines`.
+- The options mirror the config: `--versions`, `--height`, `--heading`, `--max-scan-angle`, `--side-overlap`,
+  `--footprint`, `--returns`, plus `--spacing` (ALS point spacing).
 - All fields are kept and `als_return` is added.
 - Writing into the input folder requires `--suffix`.
 
@@ -233,17 +223,12 @@ not required).
 - `test_als_augmentation.py`:
   - prepared versions: deterministic, identical to the emulation;
   - the cache is reused and recomputed when the settings change;
-  - the preparation is skipped for validation, when ALS is off and in online mode;
-  - the mixing ratio and the lookup of the masks;
-  - the plane definitions survive a JSON round trip;
-  - the probability is honoured, and no random draw happens when the augmentation is off;
-  - each plane gets picked;
-  - an oblique plane reveals the facing facade;
-  - the same seed gives the same result;
-  - the dataset hook only runs for training and uses the sphere centre.
+  - the preparation is skipped for validation and when ALS is off;
+  - the mixing ratio and the lookup of the masks, no random draw when the augmentation is off;
+  - the dataset hook only runs for training and uses the versions of the right cloud.
 - `test_als_simulation.py`: synthetic ground, building and canopy scenes covering:
   - occlusion, shadows and the swath;
   - oblique facades and multiple flight lines;
   - second returns through vegetation, but not through roofs;
-  - voxel mode and subsampling;
+  - voxel subsampling and chunked processing;
   - georeferenced coordinates.

@@ -21,9 +21,9 @@
 #      sensor (slope-tolerant z-buffer, see flight_line_returns). Optionally the beam continues through gaps (e.g.
 #      vegetation) to produce later returns. A point is visible if any flight line sees it.
 #
-#      Voxel mode (voxel_size): the cloud is voxelised first and the visibility is computed on the voxel centroids,
-#      which is less sensitive to the very uneven density of MLS / TLS data. voxel_subsample() reduces the result to
-#      an ALS-like point spacing.
+#      Training (datasets/common.py): prepare_als_versions flies parallel strips over every whole training cloud
+#      (so objects outside an input sphere still cast shadows into it), prepared_als_mask mixes the versions in.
+#      voxel_subsample() reduces a result to an ALS-like point spacing (emulate_als.py --spacing).
 #
 #      Limitation: MLS / TLS rarely capture roofs or canopy tops. Ground below a missing roof is not occluded.
 #
@@ -40,7 +40,6 @@ class FlightLine:
     offset: float = 0.0             # [m] lateral offset of the track from the cloud centre (positive = left of heading)
     height: float = 100.0           # [m] flying height above the reference height
     max_scan_angle: float = 30.0    # [deg] half swath angle across the track
-    pitch: float = 0.0              # [deg] forward (+) / backward (-) look angle along the track
 
 
 @dataclass
@@ -54,28 +53,7 @@ class ALSConfig:
     solid_coverage: float = 0.6     # footprint fraction covered by a return above which the beam does not pass
                                     # (measured on pixels of footprint / 3: closed surfaces sampled at about that
                                     # spacing reach ~0.6-0.7 because of aliasing)
-    voxel_size: float = None        # [m] voxel mode: compute the visibility per voxel (None = per point)
-    reference_height: float = None  # [m] z of the reference plane for the flying height (None = min z of the cloud)
     center: tuple = None            # [m] xy origin for headings / offsets (None = centre of the xy bounding box)
-
-
-def random_flight_lines(n=1, height=(80.0, 120.0), max_off_nadir=25.0, max_scan_angle=30.0, max_pitch=0.0, rng=None):
-    """
-    Random flight lines that all see the cloud centre: random heading, the centre is seen under an off-nadir angle
-    in [-max_off_nadir, max_off_nadir] (must not exceed max_scan_angle).
-    """
-    rng = np.random.default_rng() if rng is None else rng
-    max_off_nadir = min(max_off_nadir, max_scan_angle)
-    lines = []
-    for _ in range(n):
-        h = rng.uniform(*height) if np.ndim(height) else float(height)
-        off_nadir = np.deg2rad(rng.uniform(-max_off_nadir, max_off_nadir))
-        lines.append(FlightLine(heading=rng.uniform(0.0, 360.0),
-                                offset=h * np.tan(off_nadir),
-                                height=h,
-                                max_scan_angle=max_scan_angle,
-                                pitch=rng.uniform(-max_pitch, max_pitch)))
-    return lines
 
 
 def _window_offsets(radius, pixel):
@@ -159,16 +137,14 @@ def flight_line_returns(points, line, footprint=0.3, depth_tolerance=0.2, max_in
     if len(idx) == 0:
         return returns
 
-    # Forward / backward look: the sensor is ahead of / behind the point when the beam hits it
-    shift = below[idx] * np.tan(np.deg2rad(line.pitch))
-    rng = np.sqrt(across[idx] ** 2 + below[idx] ** 2 + shift ** 2)
+    rng = np.sqrt(across[idx] ** 2 + below[idx] ** 2)
 
     # Depth image coordinates in metres at nadir. Occlusion only acts within the window around a pixel, so long
     # lines are processed in chunks along the track (overlapping by the window) with the exact same result.
     pixel = footprint / 3
     window = _window_offsets(footprint / 2, pixel)
     r = window[3]
-    iu = np.floor((along[idx] - shift) / pixel).astype(np.int64)
+    iu = np.floor(along[idx] / pixel).astype(np.int64)
     iv = np.floor(scan[idx] * line.height / pixel).astype(np.int64)
     params = dict(window=window, pixel=pixel, depth_tolerance=depth_tolerance, max_incidence=max_incidence,
                   max_returns=max_returns, return_separation=return_separation, solid_coverage=solid_coverage)
@@ -269,18 +245,12 @@ def emulate_als(points, config=None, return_numbers=False):
         center = np.asarray(config.center, dtype=np.float64)
     local = points.copy()
     local[:, :2] -= center
-    reference_height = points[:, 2].min() if config.reference_height is None else config.reference_height
-
-    if config.voxel_size:
-        inverse, local = _voxelize(local, config.voxel_size)
-
-    # Voxel centroids are voxel_size apart: the beam must be wide enough to leave no holes between them
-    footprint = max(config.footprint, config.voxel_size * np.sqrt(2)) if config.voxel_size else config.footprint
+    reference_height = points[:, 2].min()
 
     best = np.zeros(len(local), dtype=np.int8)
     for line in config.flight_lines:
         returns = flight_line_returns(local, line,
-                                      footprint=footprint,
+                                      footprint=config.footprint,
                                       max_incidence=config.max_incidence,
                                       depth_tolerance=config.depth_tolerance,
                                       max_returns=config.max_returns,
@@ -289,9 +259,6 @@ def emulate_als(points, config=None, return_numbers=False):
                                       reference_height=reference_height)
         seen = returns > 0
         best[seen] = np.where(best[seen] > 0, np.minimum(best[seen], returns[seen]), returns[seen])
-
-    if config.voxel_size:
-        best = best[inverse]
 
     mask = best > 0
     return (mask, best) if return_numbers else mask
@@ -322,95 +289,18 @@ def voxel_subsample(points, voxel_size, mask=None):
 
 # ----------------------------------------------------------------------------------------------------------------------
 #
-#           Training augmentation
-#       \***************************/
-#
-
-def plane_to_flight_line(plane, rng=None, random_heading=True):
-    """
-    Flight line from a plane definition of config.augment_als_planes (a dict, JSON friendly):
-        height          [m] flying height above the lowest point of the sample (default 100)
-        off_nadir       [deg] angle under which the sample centre is seen (default 0 = straight above), or
-        offset          [m] lateral offset of the track from the sample centre (instead of off_nadir)
-        heading         [deg] flight direction (default: random if random_heading, else 0)
-        max_scan_angle  [deg] half swath angle (default 30)
-        pitch           [deg] forward / backward look (default 0)
-    """
-    rng = np.random if rng is None else rng
-    height = float(plane.get('height', 100.0))
-    if 'offset' in plane:
-        offset = float(plane['offset'])
-    else:
-        offset = height * np.tan(np.deg2rad(float(plane.get('off_nadir', 0.0))))
-    if 'heading' in plane:
-        heading = float(plane['heading'])
-    else:
-        heading = rng.uniform(0.0, 360.0) if random_heading else 0.0
-    return FlightLine(heading=heading, offset=offset, height=height,
-                      max_scan_angle=float(plane.get('max_scan_angle', 30.0)),
-                      pitch=float(plane.get('pitch', 0.0)))
-
-
-def als_augmentation(points, config, center=None, rng=None):
-    """
-    Training augmentation: with probability config.augment_als, keep only the points that one randomly chosen
-    plane of config.augment_als_planes would see.
-
-    Config attributes (all optional):
-        augment_als                 probability per sample, 0 = off (default)
-        augment_als_planes          list of plane dicts, see plane_to_flight_line (default: one nadir plane at 100 m)
-        augment_als_random_heading  random flight direction for planes without 'heading' (default True)
-        augment_als_footprint       [m] beam footprint (default 0.3)
-        augment_als_returns         returns per beam (default 1)
-        augment_als_voxel           [m] voxel mode (default None)
-        augment_als_min_points      keep the sample unchanged if fewer points would remain (default 2)
-
-    Only the points of the sample are used as occluders, objects outside the sample (e.g. a tree just outside the
-    input sphere) do not cast shadows into it.
-
-    :param points: float[N, 3] sample points in world orientation (z up), before the rotation augmentation
-    :param center: xy of the sample centre (None = centre of the xy bounding box)
-    :param rng: np.random module (default, follows np.random.seed) or a np.random.Generator
-    :return: bool[N] mask of the points to keep, or None if the augmentation is not applied
-    """
-    prob = getattr(config, 'augment_als', 0.0) or 0.0
-    # No random draw when disabled, so trainings without ALS augmentation are unchanged
-    if prob <= 0:
-        return None
-    rng = np.random if rng is None else rng
-    if rng.random() >= prob:
-        return None
-
-    planes = getattr(config, 'augment_als_planes', None) or [{}]
-    plane = planes[int(rng.integers(len(planes))) if hasattr(rng, 'integers') else rng.randint(len(planes))]
-    line = plane_to_flight_line(plane, rng=rng, random_heading=getattr(config, 'augment_als_random_heading', True))
-
-    als_config = ALSConfig(flight_lines=[line],
-                           footprint=getattr(config, 'augment_als_footprint', 0.3),
-                           max_returns=getattr(config, 'augment_als_returns', 1),
-                           voxel_size=getattr(config, 'augment_als_voxel', None),
-                           center=None if center is None else tuple(np.asarray(center, dtype=np.float64)[:2]))
-    mask = emulate_als(points, als_config)
-    if mask.sum() < getattr(config, 'augment_als_min_points', 2):
-        return None
-    return mask
-
-
-# ----------------------------------------------------------------------------------------------------------------------
-#
 #           Prepared ALS versions (dataset preparation step + mixing)
 #       \***********************************************************/
 #
 
 def prepared_als_settings(config):
     """ALS settings of a config that define the prepared versions (also the cache key)."""
-    return {'versions': int(getattr(config, 'augment_als_versions', 2)),
-            'height': float(getattr(config, 'augment_als_height', 100.0)),
-            'max_scan_angle': float(getattr(config, 'augment_als_max_scan_angle', 30.0)),
-            'side_overlap': float(getattr(config, 'augment_als_side_overlap', 0.3)),
-            'footprint': float(getattr(config, 'augment_als_footprint', 0.3)),
-            'returns': int(getattr(config, 'augment_als_returns', 1)),
-            'voxel': getattr(config, 'augment_als_voxel', None),
+    return {'versions': int(config.augment_als_versions),
+            'height': float(config.augment_als_height),
+            'max_scan_angle': float(config.augment_als_max_scan_angle),
+            'side_overlap': float(config.augment_als_side_overlap),
+            'footprint': float(config.augment_als_footprint),
+            'returns': int(config.augment_als_returns),
             'algorithm': 1}  # increase when the emulation changes, invalidates old caches
 
 
@@ -431,8 +321,7 @@ def prepare_als_versions(points, settings, seed=0):
         lines = strip_flight_lines(points, heading=base_heading + v * 180.0 / settings['versions'],
                                    height=settings['height'], max_scan_angle=settings['max_scan_angle'],
                                    side_overlap=settings['side_overlap'], phase=rng.uniform(0.0, 1.0))
-        als_config = ALSConfig(flight_lines=lines, footprint=settings['footprint'], max_returns=settings['returns'],
-                               voxel_size=settings['voxel'])
+        als_config = ALSConfig(flight_lines=lines, footprint=settings['footprint'], max_returns=settings['returns'])
         masks.append(emulate_als(points, als_config))
     return np.packbits(np.stack(masks), axis=1)
 
@@ -443,18 +332,18 @@ def prepared_als_mask(packed, input_inds, config, rng=None):
 
     :param packed: uint8[versions, ceil(N / 8)] from prepare_als_versions
     :param input_inds: int[M] indices of the sample in the whole cloud
+    :param rng: np.random (default, follows np.random.seed of the data loader workers) or a np.random.Generator
     :return: bool[M] mask of the points to keep, or None to keep the original sample
     """
-    prob = getattr(config, 'augment_als', 0.0) or 0.0
     # No random draw when disabled, so trainings without ALS augmentation are unchanged
-    if prob <= 0 or packed is None or len(packed) == 0:
+    if not config.augment_als or packed is None or len(packed) == 0:
         return None
     rng = np.random if rng is None else rng
-    if rng.random() >= prob:
+    if rng.random() >= config.augment_als:
         return None
-    v = int(rng.integers(len(packed))) if hasattr(rng, 'integers') else rng.randint(len(packed))
+    v = rng.choice(len(packed))
     input_inds = np.asarray(input_inds)
     mask = ((packed[v, input_inds >> 3] >> (7 - (input_inds & 7))) & 1).astype(bool)
-    if mask.sum() < getattr(config, 'augment_als_min_points', 2):
+    if mask.sum() < config.augment_als_min_points:
         return None
     return mask

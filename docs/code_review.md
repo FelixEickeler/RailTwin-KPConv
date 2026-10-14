@@ -43,7 +43,7 @@ These affect **results** (training or prediction quality), not just convenience.
 - **`train_rtib3+_tl.py`:**
   - `--pretrained <run|chkp>` loads weights only and starts at epoch 0.
   - `-ptp` resumes weights, optimizer and epoch, using that run's `parameters.json`/`.txt`.
-  - `-ft` is kept as a deprecated alias for `--pretrained <results>`.
+  - `-ft` was removed (2026-10-14); use `--pretrained <run>`.
 - **Fine-tune loading:**
   - Only weights with matching shapes are loaded, so `head_softmax` re-initialises when the class count changes (e.g. 11 → 16).
   - `map_location` is set.
@@ -151,7 +151,7 @@ These affect **results** (training or prediction quality), not just convenience.
 - cleanup — a full copy of upstream `ModelTrainer`. Subclass it and override `__init__`, `train` and `cloud_segmentation_validation` only.
 
 ### 3.2 Train scripts (`train_rtib3+.py`, `train_rtib3+_tl.py`, `train_railtwin.py`)
-- bug — `train_rtib3+.py`: `-ft` overrides `-ptp`. `os.path.join('results', …)` mangles the checkpoint path. It looks for `parameters.txt`, but only `.json` is written, so the run config is never reloaded. (Fixed in `_tl` only.)
+- bug — `train_rtib3+.py`: `-ft` overrides `-ptp`. `os.path.join('results', …)` mangles the checkpoint path. It looks for `parameters.txt`, but only `.json` is written, so the run config is never reloaded. (Fixed in all three training scripts, 2026-10-14.)
 - bug — `train_railtwin.py`:
   - CLI arguments are passed in the wrong order (`dataset` → `working_dir`, which is unused).
   - `chosen_chkp` is unassigned when there is no `checkpoints/` folder.

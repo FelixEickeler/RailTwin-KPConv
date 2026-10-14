@@ -33,7 +33,7 @@ from kernels.kernel_points import create_3D_rotations
 from datasets.rotations import random_rotation
 from datasets.features import LEGACY_FEATURES, select_features, stack_features
 from datasets.mixing import mix_spheres
-from utils.als_simulation import als_augmentation, prepare_als_versions, prepared_als_mask, prepared_als_settings
+from utils.als_simulation import prepare_als_versions, prepared_als_mask, prepared_als_settings
 
 # Subsampling extension
 import cpp_wrappers.cpp_subsampling.grid_subsampling as cpp_subsampling
@@ -289,12 +289,12 @@ class PointCloudDataset(Dataset):
 
     def prepare_als(self):
         """
-        Preparation step of the ALS augmentation (config.augment_als > 0 and augment_als_mode 'prepared'):
+        Preparation step of the ALS augmentation (config.augment_als > 0):
         computes config.augment_als_versions ALS versions of every training cloud, flown in strips over the whole
         cloud (see utils/als_simulation.py). Stored as bit masks, cached in work_dir/input_<dl>/als.
         """
         self.als_versions = None
-        if self.set != 'training' or not self.config.augment_als or self.config.augment_als_mode != 'prepared':
+        if self.set != 'training' or not self.config.augment_als:
             return
 
         import hashlib
@@ -320,21 +320,16 @@ class PointCloudDataset(Dataset):
                 print(f'ALS versions of {cloud_name}: {settings["versions"]} in {time.time() - t0:.1f}s')
             self.als_versions.append(packed)
 
-    def als_augmentation(self, cloud_ind, input_inds, points, center_point):
+    def als_augmentation(self, cloud_ind, input_inds):
         """
         Mixing step of the ALS augmentation for training samples (config.augment_als, see utils/als_simulation.py).
         :param cloud_ind: index of the cloud
         :param input_inds: int[M] indices of the input sphere in the cloud
-        :param points: float[N, 3] all points of the cloud (world coordinates)
-        :param center_point: centre of the input sphere
         :return: bool[M] mask of the points to keep, or None to keep all
         """
-        if self.set != 'training':
+        if self.set != 'training' or not self.als_versions:
             return None
-        if self.config.augment_als_mode == 'online':
-            return als_augmentation(points[input_inds], self.config, center=np.ravel(center_point)[:2])
-        versions = self.als_versions
-        return prepared_als_mask(versions[cloud_ind] if versions else None, input_inds, self.config)
+        return prepared_als_mask(self.als_versions[cloud_ind], input_inds, self.config)
 
     def augmentation_transform(self, points, normals=None, verbose=False):
         """Implementation of an augmentation transform for point clouds."""
