@@ -1,7 +1,7 @@
 #!/bin/bash
 # Start-up of the RailTwin-KPConv container:
 #   1. adapt the uid / gid of point_warrior to the host user (files in the mounted folders keep their owner)
-#   2. ssh with the key(s) from SSH_AUTHORIZED_KEYS (no password login)
+#   2. ssh (e.g. PyCharm remote interpreter) with SSH_PASSWORD and / or the key(s) from SSH_AUTHORIZED_KEYS
 #   3. compile the C++ wrappers in the mounted repository once
 #   4. TensorBoard on port 6006 (logs below TENSORBOARD_LOGDIR)
 #   5. run the command (default: bash) as point_warrior
@@ -24,10 +24,16 @@ if [ -n "${SSH_AUTHORIZED_KEYS}" ]; then
     printf '%s\n' "${SSH_AUTHORIZED_KEYS}" > ${USER_HOME}/.ssh/authorized_keys
     chown "${USER_ID}:${GROUP_ID}" ${USER_HOME}/.ssh/authorized_keys
     chmod 600 ${USER_HOME}/.ssh/authorized_keys
+fi
+if [ -n "${SSH_PASSWORD}" ]; then
+    echo "${USER_NAME}:${SSH_PASSWORD}" | chpasswd
+    sed -i 's/^#\?PasswordAuthentication .*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+fi
+if [ -n "${SSH_AUTHORIZED_KEYS}${SSH_PASSWORD}" ]; then
     service ssh start > /dev/null
-    echo "ssh: port 22 (host port see docker-compose.yml), key login only"
+    echo "ssh: port 22 (host port see docker-compose.yml), user ${USER_NAME}"
 else
-    echo "ssh: disabled (set SSH_AUTHORIZED_KEYS to enable)"
+    echo "ssh: disabled (set SSH_PASSWORD or SSH_AUTHORIZED_KEYS in docker/.env)"
 fi
 
 if [ -d "${REPO}/cpp_wrappers" ] && ! ls ${REPO}/cpp_wrappers/cpp_subsampling/grid_subsampling*.so > /dev/null 2>&1; then

@@ -1,7 +1,7 @@
 # RailTwin-KPConv development container
 #
 #   cd docker
-#   cp .env.example .env        # set DATA_DIR, WORK_DIR, ids and ssh key
+#   cp .env.example .env        # set DATA_DIR, WORK_DIR, ids and ssh password / key
 #   docker compose up -d --build
 #   docker compose exec kpconv bash      (or: ssh -p 2244 point_warrior@<host>)
 #
@@ -24,6 +24,7 @@ services:
     environment:
       - LOCAL_UID=${LOCAL_UID:-1000}
       - LOCAL_GID=${LOCAL_GID:-1000}
+      - SSH_PASSWORD=${SSH_PASSWORD:-}
       - SSH_AUTHORIZED_KEYS=${SSH_AUTHORIZED_KEYS:-}
       - DISPLAY=${DISPLAY:-}
     ports:

@@ -17,8 +17,8 @@ RUN pip3 install --upgrade pip \
     && pip3 install -r /tmp/requirements.txt \
     && rm /tmp/requirements.txt
 
-# User point_warrior; uid / gid are adapted to the host at start (see entrypoint). No password: ssh only with keys,
-# sudo without password for development inside the container.
+# User point_warrior; uid / gid are adapted to the host at start (see entrypoint). Password / keys for ssh are set at start
+# from docker/.env, sudo without password for development inside the container.
 RUN useradd -m -s /bin/bash --no-log-init point_warrior \
     && usermod -aG sudo point_warrior \
     && echo 'point_warrior ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/point_warrior \

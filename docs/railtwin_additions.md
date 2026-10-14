@@ -135,9 +135,9 @@ To switch the dataset or split, change the `import ... as RailTwinDatasetECPPM20
   Set it up with `git submodule init && git submodule update`.
 - **`docker/`**: Ubuntu 22.04, Python 3.10, PyTorch 2.3.1 with CUDA 12.1 (RTX 30xx / 40xx). One pinned
   `requirements.txt`; numpy 1.22 and scikit-learn 1.0.2 are kept for `railtwin_common` and cached KD-trees.
-  - **Settings:** in `docker/.env` (from `.env.example`): data and work folder, uid / gid, ssh public key.
+  - **Settings:** in `docker/.env` (from `.env.example`): data and work folder, uid / gid, ssh password and / or public key.
   - **Start-up:** the C++ wrappers are compiled on the first start, and TensorBoard runs on host port 6667.
-  - **Access:** ssh only with keys (no password).
+  - **Access:** ssh (e.g. PyCharm remote interpreter) with the password and / or key from `docker/.env`; no password is built into the image.
   - **Start it with:**
     ```bash
     cd docker && cp .env.example .env && docker compose up -d --build
