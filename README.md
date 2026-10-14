@@ -16,8 +16,10 @@ Mostly the modifications consist of 3 parts:
 - custom training
 - result writing
 
-Most of the dataset splits and types can be change by modifying the import statements. 
-Files are usually named rtib for dataset related tasks or RailTwin for generic use.
+Data paths, splits and classes are set in the configs (`utils/config_railtwin.py` for training from scratch,
+`utils/config_railtwin_tl.py` for fine-tuning on real data), see `datasets/railtwin.py`.
+Documentation: `docs/railtwin_additions.md` (all changes to KPConv), `docs/tasks.md` (open tasks),
+`docs/agents.md` (compact map of the code for coding agents).
 
 ## Getting Started
 Make sure that the common submodule is pulled:
