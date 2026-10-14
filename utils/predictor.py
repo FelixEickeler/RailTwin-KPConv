@@ -48,7 +48,7 @@ class Predictor:
             logger.info("Generating KPFCNN")
             self.model = KPFCNN(self.config, self.config.labels, self.config.ignored_labels)  #
         else:
-            logger.warn("Your KPconf config does not support this testing methodology, please use the orignal Testing")
+            logger.warning("Your KPconf config does not support this testing methodology, please use the orignal Testing")
             raise Exception("Deprecated")
 
         self.model.to(self.device)

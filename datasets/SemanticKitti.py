@@ -582,7 +582,7 @@ class SemanticKittiDataset(PointCloudDataset):
 
         if self.set in ['training', 'validation']:
 
-            class_frames_bool = np.zeros((0, self.num_classes), dtype=np.bool)
+            class_frames_bool = np.zeros((0, self.num_classes), dtype=bool)
             self.class_proportions = np.zeros((self.num_classes,), dtype=np.int32)
 
             for s_ind, (seq, seq_frames) in enumerate(zip(self.sequences, self.frames)):
@@ -604,7 +604,7 @@ class SemanticKittiDataset(PointCloudDataset):
                     print('Preparing seq {:s} class frames. (Long but one time only)'.format(seq))
 
                     # Class frames as a boolean mask
-                    seq_class_frames = np.zeros((len(seq_frames), self.num_classes), dtype=np.bool)
+                    seq_class_frames = np.zeros((len(seq_frames), self.num_classes), dtype=bool)
 
                     # Proportion of each class
                     seq_proportions = np.zeros((self.num_classes,), dtype=np.int32)

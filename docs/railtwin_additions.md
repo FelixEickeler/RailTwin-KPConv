@@ -132,9 +132,15 @@ To switch the dataset or split, change the `import ... as RailTwinDatasetECPPM20
 
 - **Submodule `railtwin_common`** ([RailTwin-Common](https://github.com/FelixEickeler/RailTwin-Common)):
   IO readers and writers, logger, PCA, KNN voting, track divider and splicer, quadindex.
-  Set it up with `git submodule init && git submodule update`.
+  Set it up with `git submodule init && git submodule update`. KPConv uses its PLY / LAS reading, the PLY writer
+  and the logger for prediction (`test_railtwin.py`, `utils/predictor.py`); training does not need it.
+  - **Updated 2026-10-14** (RailTwin-Common `main`): the writers keep float64 coordinates (before, predictions of
+    georeferenced clouds were written as float32, up to ~0.1 m off) and no longer change the caller's DataFrame.
+    Unknown PLY columns are kept when reading. The logger is Python `logging` (no spdlog). It works with numpy 2
+    and pandas 2, has a `pyproject.toml` and 24 passing tests.
 - **`docker/`**: Ubuntu 22.04, Python 3.10, PyTorch 2.3.1 with CUDA 12.1 (RTX 30xx / 40xx). One pinned
-  `requirements.txt`; numpy 1.22 and scikit-learn 1.0.2 are kept for `railtwin_common` and cached KD-trees.
+  `requirements.txt`: numpy 1.26 (the C++ wrappers build with `numpy.distutils`, which numpy 2 removed),
+  scikit-learn 1.0.2 so cached KD-trees still load.
   - **Settings:** in `docker/.env` (from `.env.example`): data and work folder, uid / gid, ssh password and / or public key.
   - **Start-up:** the C++ wrappers are compiled on the first start, and TensorBoard runs on host port 6667.
   - **Access:** ssh (e.g. PyCharm remote interpreter) with the password and / or key from `docker/.env`; no password is built into the image.

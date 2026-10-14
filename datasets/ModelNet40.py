@@ -252,9 +252,9 @@ class ModelNet40Dataset(PointCloudDataset):
 
             # Collect training file names
             if self.train:
-                names = np.loadtxt(join(self.path, 'modelnet40_train.txt'), dtype=np.str)
+                names = np.loadtxt(join(self.path, 'modelnet40_train.txt'), dtype=str)
             else:
-                names = np.loadtxt(join(self.path, 'modelnet40_test.txt'), dtype=np.str)
+                names = np.loadtxt(join(self.path, 'modelnet40_test.txt'), dtype=str)
 
             # Initialize containers
             input_points = []
