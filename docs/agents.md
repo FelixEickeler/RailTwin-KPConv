@@ -1,7 +1,7 @@
 # Agent map — RailTwin-KPConv
 
 Terse map for coding agents. Repo = KPConv-PyTorch fork (Hugues Thomas) + RailTwin additions for railway point
-cloud semantic segmentation. Long human docs: `docs/railtwin_additions.md`. Open/closed tasks: `docs/tasks.md`. Data prep (tile buffer ≥ in_radius, fields, names): `docs/data_preparation.md`.
+cloud semantic segmentation. Long human docs: `docs/railtwin_additions.md`. Open/closed tasks: `docs/tasks.md`. Data prep (tile buffer ≥ in_radius, fields, names): `docs/data_preparation.md`. Label mappings: `docs/labels.md`.
 
 ## Rules (from owner)
 
