@@ -23,6 +23,7 @@ From the simplicity review (2026-10-14).
 - **`train_railtwin.py`** (2026-10-15) imports `datasets.railtwin.RailTwinDataset` directly; the fallback for the
   missing `datasets.RailTwin_static` is gone.
 - **`--votes`** (2026-10-15) for `test_railtwin.py` and `evaluate.py`; default 100 as before.
+- **Prediction calibration cached** (2026-10-15) per model settings and density class instead of per cloud.
 
 ## Not done, on purpose
 

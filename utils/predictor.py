@@ -6,6 +6,7 @@
 #
 import hashlib
 import os
+import pickle
 import shutil
 import time
 from pathlib import Path
@@ -33,7 +34,7 @@ logger = RailTwinLogger.create()
 
 class Predictor:
 
-    def __init__(self, cfg, num_votes=100):
+    def __init__(self, cfg, num_votes=100, recalibrate=False):
         self.test_probs = None
         self.model = None
         self.config = cfg.copy()
@@ -75,6 +76,40 @@ class Predictor:
         self.softmax = torch.nn.Softmax(1)
         # Inference stops when every point of the subsampled cloud was predicted about num_votes times
         self.num_votes = num_votes
+        # Batch and neighbour calibration, stored per density class (see density_class) and reused for the next
+        # clouds; recalibrate=True computes it again
+        self.recalibrate = recalibrate
+        self.calibration_dir = Path(cfg.saving_path) / "calibration"
+        self.calibration_dir.mkdir(parents=True, exist_ok=True)
+
+    def density_class(self, search_tree, samples=200):
+        """
+        Density class of a subsampled cloud for the calibration key: median number of points in a sphere of
+        in_radius around random points, in steps of 2^(1/4) (about 19 %). Clouds of similar density (e.g. the same
+        sensor) share a calibration, others (e.g. ALS vs MLS) get their own.
+        """
+        points = np.asarray(search_tree.data)
+        rng = np.random.default_rng(0)
+        centres = points[rng.choice(len(points), min(samples, len(points)), replace=False)]
+        counts = search_tree.query_radius(centres, r=self.config.in_radius, count_only=True)
+        return int(round(4 * np.log2(max(np.median(counts), 1))))
+
+    def stored_density(self, density):
+        """
+        The density class to calibrate with: a stored one next to it (one class, about 19 %) if there is one, so that
+        clouds of one source near a class border share the calibration. Otherwise density itself (new calibration).
+        """
+        logger.info(f"Density class {density} (median {2 ** (density / 4):.0f} points per sphere)")
+        if self.recalibrate:
+            return density
+        stored = self.calibration_dir / "batch_limits.pkl"
+        keys = pickle.load(open(stored, "rb")).keys() if stored.exists() else []
+        for candidate in (density, density - 1, density + 1):
+            if any(k.endswith(f"_density{candidate}") for k in keys):
+                if candidate != density:
+                    logger.info(f"Using the stored calibration of density class {candidate}")
+                return candidate
+        return density
 
     def subsample(self, pointcloud, local_xyz, cache_name):
         """Grid subsampling of the cloud; local_xyz: float32[N, 3] local coordinates (no copy of the whole cloud)."""
@@ -225,7 +260,9 @@ class Predictor:
 
             # Calibrate input Batches
             logger.info("Calibrating input batches...")
-            sampler.calibration(dataloader=test_loader, verbose=True, force_redo=True)
+            density = self.stored_density(self.density_class(search_tree))
+            sampler.calibration(dataloader=test_loader, verbose=True, force_redo=self.recalibrate,
+                                cache_dir=self.calibration_dir, key_suffix=f"_density{density}")
             self.test_probs = np.zeros((dataset.input_labels[0].shape[0], self.config.num_classes))
 
             # Predictions

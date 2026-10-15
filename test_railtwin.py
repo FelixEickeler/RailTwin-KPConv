@@ -73,6 +73,8 @@ if __name__ == '__main__':
     parser.add_argument('--test', action='store_true')
     parser.add_argument('--votes', type=int, default=100,
                         help='Votes per point (default 100; fewer is faster, e.g. 10-20 for a quick check)')
+    parser.add_argument('--recalibrate', action='store_true',
+                        help='Compute the batch calibration again (it is stored per model settings and point density)')
     parser.add_argument('-gid', '--gpu_id', default="0", type=str, help="Choose the GPU_ID for training")
     parser.add_argument('--drop-features', action='store_true',
                         help="Predict without input features (zeroed), e.g. for data without colour / intensity")
@@ -105,7 +107,7 @@ if __name__ == '__main__':
     cfg.batch_num = 10
     cfg.validation_size = 200
 
-    predictor = Predictor(cfg, num_votes=args.votes)
+    predictor = Predictor(cfg, num_votes=args.votes, recalibrate=args.recalibrate)
     for file in input_paths:
         file = Path(file)
         relative = file.relative_to(input_root)

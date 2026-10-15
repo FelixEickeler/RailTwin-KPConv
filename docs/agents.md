@@ -28,8 +28,8 @@ cloud semantic segmentation. Long human docs: `docs/railtwin_additions.md`. Open
 | `train_rtib3+.py` | train from scratch, synthetic data, `utils/config_railtwin.py`. `-o` work dir, `-ptp` resume run, `-r` in_radius, `-gid` |
 | `train_rtib3+_tl.py` | fine-tune real data, `utils/config_railtwin_tl.py`. `--pretrained <run>` weights only (shape-mismatch layers re-init), `-ptp` resume, `--schedule gradual\|real` (unfreeze) |
 | `train_railtwin.py` | generic, `RailTwinDataset` + `utils/config_railtwin.py`, picks free GPUs via nvidia-smi |
-| `test_railtwin.py` | predict: `-m` run/ckpt, `-i` cloud/folder, `-o` out, `--drop-features`, `--votes` (default 100). Writes `<cloud>_predicted.ply` (col `preds_<pred_selected>`). `resolve_model`, `setup_cfg` reused by evaluate |
-| `evaluate.py` | full-res eval vs labels: `-m`, `-i`, `-n` test set, `--label-column`, `--votes`, `--save-predictions`. Out `<run>/evaluation/<n>/evaluation.{json,csv}` + TB run `<run>/logdir/eval_<n>` |
+| `test_railtwin.py` | predict: `-m` run/ckpt, `-i` cloud/folder, `-o` out, `--drop-features`, `--votes` (default 100), `--recalibrate`. Writes `<cloud>_predicted.ply` (col `preds_<pred_selected>`). `resolve_model`, `setup_cfg` reused by evaluate |
+| `evaluate.py` | full-res eval vs labels: `-m`, `-i`, `-n` test set, `--label-column`, `--votes`, `--recalibrate`, `--save-predictions`. Out `<run>/evaluation/<n>/evaluation.{json,csv}` + TB run `<run>/logdir/eval_<n>` |
 | `test_models.py` | old KPConv tester; RailTwin runs load `parameters.json`, upstream `parameters.txt` |
 | `emulate_als.py` | offline ALS emulation of .ply (flight strips), writes new clouds |
 | `train_<S3DIS\|NPM3D\|...>.py`, `plot_convergence.py`, `visualize_deformations.py` | upstream |
@@ -87,5 +87,7 @@ Cache folder `dataset_work_dir/input_<dl>/`: `<cloud>.ply` (subsampled; mapped i
 - `config.labels`/`ignored_labels`/`num_classes` are set by the dataset at runtime and saved in `parameters.json`; prediction/eval rely on them.
 - Resume (`-ptp`) loads run `parameters.json`; old runs w/o `dataset_*` keys fall back to script config defaults.
 - Validation dataset sets `batch_num = val_batch_num` on its own config copy only.
-- `Predictor(cfg, num_votes=100)`: votes are part of the prediction cache key. ~20 votes ≈ 100 (HT); fewer = faster.
+- `Predictor(cfg, num_votes=100, recalibrate=False)`: votes are part of the prediction cache key. ~20 votes ≈ 100 (HT); fewer = faster.
+- Prediction calibration (batch/neighbor limits) cached in `rtib_tmp/calibration/*.pkl`, key + `_density<class>` (median pts per in_radius sphere, steps 2^(1/4); ±1 class reused). Was redone per cloud (45 s – 6 min).
+- Prediction RAM (measured, synthetic MLS): ~9 GB fixed (workers) + ~170 B/input point → ~5e8 points max on 93 GB. GPU already works on spheres; no tiling yet.
 - `rtib_tmp/` (prediction cache) gitignored.

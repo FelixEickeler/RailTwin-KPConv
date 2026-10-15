@@ -727,9 +727,12 @@ class InferenceSampler(Sampler):
             if breaking:
                 break
 
-    def calibration(self, dataloader, untouched_ratio=0.9, verbose=False, force_redo=False):
+    def calibration(self, dataloader, untouched_ratio=0.9, verbose=False, force_redo=False, cache_dir=None,
+                    key_suffix=''):
         """
         Method performing batch and neighbors calibration.
+        cache_dir: folder of the stored calibrations (default: the folder of the cloud). key_suffix is added to the
+        keys, e.g. a density class of the cloud (utils/predictor.py), so that clouds of other sources get their own.
             Batch calibration: Set "batch_limit" (the maximum number of points allowed in every batch) so that the
                                average batch size (number of stacked pointclouds) is the one asked.
         Neighbors calibration: Set the "neighborhood_limits" (the maximum number of neighbors allowed in convolutions)
@@ -749,7 +752,8 @@ class InferenceSampler(Sampler):
         # ***********
 
         # Load batch_limit dictionary
-        batch_lim_file = join(self.dataset.path, 'batch_limits.pkl')
+        cache_dir = self.dataset.path if cache_dir is None else cache_dir
+        batch_lim_file = join(cache_dir, 'batch_limits.pkl')
         if exists(batch_lim_file):
             with open(batch_lim_file, 'rb') as file:
                 batch_lim_dict = pickle.load(file)
@@ -764,7 +768,7 @@ class InferenceSampler(Sampler):
         key = '{:s}_{:.3f}_{:.3f}_{:d}'.format(sampler_method,
                                                self.dataset.config.in_radius,
                                                self.dataset.config.first_subsampling_dl,
-                                               self.dataset.config.batch_num)
+                                               self.dataset.config.batch_num) + key_suffix
         if not redo and key in batch_lim_dict:
             self.dataset.batch_limit[0] = batch_lim_dict[key]
         else:
@@ -785,7 +789,7 @@ class InferenceSampler(Sampler):
         # ***************
 
         # Load neighb_limits dictionary
-        neighb_lim_file = join(self.dataset.path, 'neighbors_limits.pkl')
+        neighb_lim_file = join(cache_dir, 'neighbors_limits.pkl')
         if exists(neighb_lim_file):
             with open(neighb_lim_file, 'rb') as file:
                 neighb_lim_dict = pickle.load(file)
@@ -802,7 +806,7 @@ class InferenceSampler(Sampler):
             else:
                 r = dl * self.dataset.config.conv_radius
 
-            key = '{:.3f}_{:.3f}'.format(dl, r)
+            key = '{:.3f}_{:.3f}'.format(dl, r) + key_suffix
             if key in neighb_lim_dict:
                 neighb_limits += [neighb_lim_dict[key]]
 
@@ -819,7 +823,7 @@ class InferenceSampler(Sampler):
                     r = dl * self.dataset.config.deform_radius
                 else:
                     r = dl * self.dataset.config.conv_radius
-                key = '{:.3f}_{:.3f}'.format(dl, r)
+                key = '{:.3f}_{:.3f}'.format(dl, r) + key_suffix
 
                 if key in neighb_lim_dict:
                     color = bcolors.OKGREEN
@@ -1001,7 +1005,7 @@ class InferenceSampler(Sampler):
             key = '{:s}_{:.3f}_{:.3f}_{:d}'.format(sampler_method,
                                                    self.dataset.config.in_radius,
                                                    self.dataset.config.first_subsampling_dl,
-                                                   self.dataset.config.batch_num)
+                                                   self.dataset.config.batch_num) + key_suffix
             batch_lim_dict[key] = float(self.dataset.batch_limit)
             with open(batch_lim_file, 'wb') as file:
                 pickle.dump(batch_lim_dict, file)
@@ -1013,7 +1017,7 @@ class InferenceSampler(Sampler):
                     r = dl * self.dataset.config.deform_radius
                 else:
                     r = dl * self.dataset.config.conv_radius
-                key = '{:.3f}_{:.3f}'.format(dl, r)
+                key = '{:.3f}_{:.3f}'.format(dl, r) + key_suffix
                 neighb_lim_dict[key] = self.dataset.neighborhood_limits[layer_ind]
             with open(neighb_lim_file, 'wb') as file:
                 pickle.dump(neighb_lim_dict, file)

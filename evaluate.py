@@ -61,6 +61,8 @@ if __name__ == '__main__':
     parser.add_argument('--no-tensorboard', action='store_true')
     parser.add_argument('--votes', type=int, default=100,
                         help='Votes per point (default 100; fewer is faster, e.g. 10-20 for a quick check)')
+    parser.add_argument('--recalibrate', action='store_true',
+                        help='Compute the batch calibration again (it is stored per model settings and point density)')
     parser.add_argument('-gid', '--gpu_id', default="0", type=str, help="GPU id")
     args = parser.parse_args()
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
@@ -89,7 +91,7 @@ if __name__ == '__main__':
     names_of = {v: k for k, v in cfg.labels.items()}
     ignored = [cfg.labels[n] for n in cfg.ignored_labels]
 
-    predictor = Predictor(cfg, num_votes=args.votes)
+    predictor = Predictor(cfg, num_votes=args.votes, recalibrate=args.recalibrate)
     per_cloud, total_C, class_values = {}, None, None
     for file in files:
         relative = file.relative_to(input_root)
