@@ -33,7 +33,7 @@ logger = RailTwinLogger.create()
 
 class Predictor:
 
-    def __init__(self, cfg):
+    def __init__(self, cfg, num_votes=100):
         self.test_probs = None
         self.model = None
         self.config = cfg.copy()
@@ -53,10 +53,10 @@ class Predictor:
         self.model.to(self.device)
         self.epoch = 0
         checkpoint = torch.load(cfg.chkp_path, map_location=self.device)
-        # Cached predictions are only valid for this checkpoint and subsampling
+        # Cached predictions are only valid for this checkpoint, subsampling and number of votes
         chkp = Path(cfg.chkp_path)
         self.model_key = hashlib.sha1(f"{chkp.resolve()}|{chkp.stat().st_mtime}|{chkp.stat().st_size}|"
-                                      f"{self.config.first_subsampling_dl}".encode()).hexdigest()[:10]
+                                      f"{self.config.first_subsampling_dl}|{num_votes}".encode()).hexdigest()[:10]
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.model.eval()
 
@@ -73,7 +73,8 @@ class Predictor:
         self.test_smooth = 0.95
         self.test_radius_ratio = 0.7
         self.softmax = torch.nn.Softmax(1)
-        self.num_votes = 100 #100
+        # Inference stops when every point of the subsampled cloud was predicted about num_votes times
+        self.num_votes = num_votes
 
     def subsample(self, pointcloud, local_xyz, cache_name):
         """Grid subsampling of the cloud; local_xyz: float32[N, 3] local coordinates (no copy of the whole cloud)."""

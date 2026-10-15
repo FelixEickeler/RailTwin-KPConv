@@ -29,14 +29,7 @@ import argparse
 from torch.utils.data import DataLoader
 from models.architectures import KPFCNN
 
-try:
-    from datasets.RailTwin_static import RailTwinStatic as RailTwinDataset
-except ImportError:
-    # RailTwin_static (ECPPM 2022 dataset) is not part of this repository; fall back to the RailTwin dataset
-    import warnings
-    warnings.warn('datasets.RailTwin_static not found, falling back to datasets.railtwin.RailTwinDataset')
-    from datasets.railtwin import RailTwinDataset
-from datasets.railtwin import RailTwinSampler, RailTwinCollate
+from datasets.railtwin import RailTwinDataset, RailTwinSampler, RailTwinCollate
 from utils.trainer_railtwin import ModelTrainer
 from utils.config_railtwin import RailTwinConfig
 from utils.checkpoints import find_checkpoint

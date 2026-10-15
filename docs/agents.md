@@ -27,9 +27,9 @@ cloud semantic segmentation. Long human docs: `docs/railtwin_additions.md`. Open
 |---|---|
 | `train_rtib3+.py` | train from scratch, synthetic data, `utils/config_railtwin.py`. `-o` work dir, `-ptp` resume run, `-r` in_radius, `-gid` |
 | `train_rtib3+_tl.py` | fine-tune real data, `utils/config_railtwin_tl.py`. `--pretrained <run>` weights only (shape-mismatch layers re-init), `-ptp` resume, `--schedule gradual\|real` (unfreeze) |
-| `train_railtwin.py` | generic; tries `datasets.RailTwin_static` (missing) → falls back `RailTwinDataset` |
-| `test_railtwin.py` | predict: `-m` run/ckpt, `-i` cloud/folder, `-o` out, `--drop-features`. Writes `<cloud>_predicted.ply` (col `preds_<pred_selected>`). `resolve_model`, `setup_cfg` reused by evaluate |
-| `evaluate.py` | full-res eval vs labels: `-m`, `-i`, `-n` test set, `--label-column`, `--save-predictions`. Out `<run>/evaluation/<n>/evaluation.{json,csv}` + TB run `<run>/logdir/eval_<n>` |
+| `train_railtwin.py` | generic, `RailTwinDataset` + `utils/config_railtwin.py`, picks free GPUs via nvidia-smi |
+| `test_railtwin.py` | predict: `-m` run/ckpt, `-i` cloud/folder, `-o` out, `--drop-features`, `--votes` (default 100). Writes `<cloud>_predicted.ply` (col `preds_<pred_selected>`). `resolve_model`, `setup_cfg` reused by evaluate |
+| `evaluate.py` | full-res eval vs labels: `-m`, `-i`, `-n` test set, `--label-column`, `--votes`, `--save-predictions`. Out `<run>/evaluation/<n>/evaluation.{json,csv}` + TB run `<run>/logdir/eval_<n>` |
 | `test_models.py` | old KPConv tester; RailTwin runs load `parameters.json`, upstream `parameters.txt` |
 | `emulate_als.py` | offline ALS emulation of .ply (flight strips), writes new clouds |
 | `train_<S3DIS\|NPM3D\|...>.py`, `plot_convergence.py`, `visualize_deformations.py` | upstream |
@@ -37,7 +37,7 @@ cloud semantic segmentation. Long human docs: `docs/railtwin_additions.md`. Open
 ## Data flow
 
 `.ply` (x,y,z,above_ground,intensity,system [+component]) → `RailTwinDataset` loads, maps labels (opt.), grid-subsamples (`first_subsampling_dl`), caches → sphere sampling by potentials (or class-balanced) → augment (rotation, scale, noise, Mix3D, ALS) → `RailTwinCollate` builds KPConv batch (neighbors/pools via C++) → `KPFCNN` → `SegmentationLoss` → `ModelTrainer`.
-Predict: `Predictor` subsample → `InferenceDataset` votes (100) → subsampled preds → `knn_voting` to full cloud.
+Predict: `Predictor` subsample → `InferenceDataset` votes (`--votes`, default 100) → subsampled preds → `knn_voting` to full cloud.
 
 ## datasets/
 
@@ -87,5 +87,5 @@ Cache folder `dataset_work_dir/input_<dl>/`: `<cloud>.ply` (subsampled; mapped i
 - `config.labels`/`ignored_labels`/`num_classes` are set by the dataset at runtime and saved in `parameters.json`; prediction/eval rely on them.
 - Resume (`-ptp`) loads run `parameters.json`; old runs w/o `dataset_*` keys fall back to script config defaults.
 - Validation dataset sets `batch_num = val_batch_num` on its own config copy only.
-- Prediction votes fixed `num_votes = 100` in `Predictor` (slow on big clouds).
+- `Predictor(cfg, num_votes=100)`: votes are part of the prediction cache key. ~20 votes ≈ 100 (HT); fewer = faster.
 - `rtib_tmp/` (prediction cache) gitignored.

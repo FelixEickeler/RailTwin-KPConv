@@ -20,11 +20,12 @@ From the simplicity review (2026-10-14).
   `augment_rotation` values raise an error instead of silently not rotating.
 - **Datasets merged** (2026-10-14): the nine `rtib3p*.py` / `test_dataset.py` files (about 10 000 lines) are one
   `datasets/railtwin.py`. Path, work dir, split and classes are config options; checked to give the same data.
+- **`train_railtwin.py`** (2026-10-15) imports `datasets.railtwin.RailTwinDataset` directly; the fallback for the
+  missing `datasets.RailTwin_static` is gone.
+- **`--votes`** (2026-10-15) for `test_railtwin.py` and `evaluate.py`; default 100 as before.
 
 ## Not done, on purpose
 
-- **`RailTwin_static` import fallback** in `train_railtwin.py` stays until it is clear whether `RailTwin_static`
-  comes back. Without it, the script falls back to `datasets/railtwin.py` (with a warning).
 - **`RailTwinCustomBatch`/`RailTwinCollate`** (`datasets/railtwin.py`) stays a copy of the S3DIS batch class. Sharing it
   would mean changing the upstream file `S3DIS.py` and make future upstream syncs harder.
 - **A name for the 8.9 m reference radius of `expected_N`:** the comment next to the formula

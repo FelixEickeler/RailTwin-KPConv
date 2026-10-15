@@ -12,7 +12,7 @@
 # ----------------------------------------------------------------------------------------------------------------------
 #
 #      RailTwin addition.
-#          python3 evaluate.py -m <run folder | checkpoint> -i <cloud | folder> [-n <test set name>]
+#          python3 evaluate.py -m <run folder | checkpoint> -i <cloud | folder> [-n <test set name>] [--votes 100]
 #      Predicts every cloud (utils/predictor.py, the prediction cache is reused), compares with the true labels of the
 #      cloud (the classes of the model; a label mapping of the model is applied) and writes
 #          <output>/evaluation.json, evaluation.csv   IoU per class, mIoU and accuracy, per cloud and in total
@@ -59,6 +59,8 @@ if __name__ == '__main__':
                         help='Column with the true labels as class ids of the model (default: from the model config)')
     parser.add_argument('--save-predictions', action='store_true', help='Also write <cloud>_predicted.ply')
     parser.add_argument('--no-tensorboard', action='store_true')
+    parser.add_argument('--votes', type=int, default=100,
+                        help='Votes per point (default 100; fewer is faster, e.g. 10-20 for a quick check)')
     parser.add_argument('-gid', '--gpu_id', default="0", type=str, help="GPU id")
     args = parser.parse_args()
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
@@ -87,7 +89,7 @@ if __name__ == '__main__':
     names_of = {v: k for k, v in cfg.labels.items()}
     ignored = [cfg.labels[n] for n in cfg.ignored_labels]
 
-    predictor = Predictor(cfg)
+    predictor = Predictor(cfg, num_votes=args.votes)
     per_cloud, total_C, class_values = {}, None, None
     for file in files:
         relative = file.relative_to(input_root)
@@ -118,7 +120,8 @@ if __name__ == '__main__':
 
     # Reports
     with open(output / "evaluation.json", "w") as f:
-        json.dump({"model": str(model_path), "test_set": name, "total": total, "clouds": per_cloud,
+        json.dump({"model": str(model_path), "test_set": name, "votes": args.votes,
+                   "total": total, "clouds": per_cloud,
                    "confusion": {"classes": [names_of[v] for v in class_values],
                                  "matrix": total_C.tolist(),
                                  "note": "rows: true class, columns: predicted class (last: outside the classes)"}},
@@ -135,7 +138,8 @@ if __name__ == '__main__':
     if not args.no_tensorboard:
         train_logs = sorted((run_dir / "logdir").glob("*_experiment_*"), key=lambda p: p.stat().st_mtime)
         hparam_dict = training_hparams(train_logs[-1]) if train_logs else {}
-        hparam_dict.update({"eval/test_set": name, "eval/model": run_dir.name, "eval/checkpoint": model_path.name})
+        hparam_dict.update({"eval/test_set": name, "eval/model": run_dir.name, "eval/checkpoint": model_path.name,
+                            "eval/votes": args.votes})
         write_tensorboard(run_dir / "logdir" / f"eval_{name}", hparam_dict, total, per_cloud, text)
     logger.info(f"Evaluation written to {output}")
 

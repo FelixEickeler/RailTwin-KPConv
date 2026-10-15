@@ -127,13 +127,13 @@ The old setups as config values (paths in the Docker layout, §2.6):
 
 | File | Purpose |
 |---|---|
-| `train_railtwin.py` | Generic RailTwin training (uses `datasets.RailTwin_static`, see §3). |
+| `train_railtwin.py` | Generic RailTwin training on `datasets/railtwin.py` with `utils/config_railtwin.py`. |
 | `train_rtib3+.py` | Trains from scratch on the synthetic RTIB3+ data of `utils/config_railtwin.py` (16 classes). Arguments: `-o` results folder, `-ptp` run to resume, `-gid` GPU id, `-r` sphere radius. |
 | `train_rtib3+_tl.py` | Transfer learning on the real data of `utils/config_railtwin_tl.py`. `--pretrained <run\|chkp>` loads weights only (layers whose shape changed, e.g. `head_softmax`, stay initialised) and starts at epoch 0. `-ptp` resumes a run. Training follows `unfreeze_schedule` in `utils/config_railtwin_tl.py`: head_softmax → head_mlp → decoder → encoder (gradual unfreezing). |
 | `utils/trainer_railtwin.py` | `ModelTrainer` with `train_with_unfreeze_schedule()`, TensorBoard logging (`SummaryWriter`, confusion-matrix images through `utils/plot_cm.py`). Can fine-tune from a checkpoint or resume a run (`finetune`, `continue_epoch`). Checkpoints are found by `utils/checkpoints.py` (newest `*.tar` of a run folder, usually `current_chkp.tar`), the same rule for resuming, fine-tuning and prediction. |
 | `test_models.py` | Argparse CLI (`log_dir`, `model_path`, `out_dir`, `val`, `dataset_overwrite`). Supports the datasets `rtib+`, `RailTwin` and `-rtib`. RailTwin runs are loaded from their `parameters.json` (data paths, classes), upstream runs from `parameters.txt`. |
-| `test_railtwin.py` | Inference CLI: `-m` model, `-i` input file or folder, `-o` output, `-gid` GPU. Reads clouds through `railtwin_common` IO. |
-| `evaluate.py` | Evaluation on labelled clouds at full resolution: `-m` model, `-i` cloud or folder, `-n` test set name, `--save-predictions`. Predicts each cloud (prediction cache reused) and compares with its true labels in the model's classes (`utils/evaluation.py`: the model's label mapping is applied, else the `pred_selected` column; `--label-column` overrides). Points with ignored or unknown labels are not counted. Writes `<run>/evaluation/<name>/evaluation.json` / `.csv` (IoU per class, mIoU over the classes present, accuracy, confusion matrix; per cloud and in total) and a TensorBoard run `<run>/logdir/eval_<name>` with the model's HParams and `Eval/*` metrics, so evaluations on one test set are rows of the HParams table. |
+| `test_railtwin.py` | Inference CLI: `-m` model, `-i` input file or folder, `-o` output, `-gid` GPU, `--votes` votes per point (default 100; about 20 give nearly the same result, see `docs/literature_review_training.md`). Reads clouds through `railtwin_common` IO. |
+| `evaluate.py` | Evaluation on labelled clouds at full resolution: `-m` model, `-i` cloud or folder, `-n` test set name, `--votes` (default 100, stored in the report and as HParam `eval/votes`), `--save-predictions`. Predicts each cloud (prediction cache reused) and compares with its true labels in the model's classes (`utils/evaluation.py`: the model's label mapping is applied, else the `pred_selected` column; `--label-column` overrides). Points with ignored or unknown labels are not counted. Writes `<run>/evaluation/<name>/evaluation.json` / `.csv` (IoU per class, mIoU over the classes present, accuracy, confusion matrix; per cloud and in total) and a TensorBoard run `<run>/logdir/eval_<name>` with the model's HParams and `Eval/*` metrics, so evaluations on one test set are rows of the HParams table. |
 | `utils/predictor.py` | `Predictor`: subsamples, runs KPFCNN over `InferenceDataset`, and maps predictions back to the full cloud with a weighted 5-NN vote (`utils/voting.py`, scipy `cKDTree` on all cores: about 6 min instead of 1.5 h for 1e9 points). The KD-tree is passed to `InferenceDataset` directly, not pickled. Writes PLY files with `railtwin_common`. |
 
 ### 2.4b Training options (from the literature review, `docs/literature_review_training.md`)
@@ -180,9 +180,9 @@ The old setups as config values (paths in the Docker layout, §2.6):
 
 ## 3. Known issues (already present before the sync)
 
-- `train_railtwin.py` imports `datasets.RailTwin_static` (`RailTwinStatic`, probably the ECPPM 2022 dataset
-  with a hard-coded cloud list), which is not in the repository. The script now falls back to
-  `datasets.railtwin.RailTwinDataset` and prints a warning. (`utils/predictor.py` used to import `S3DISCollate` from the missing `datasets.RailTwin_priming`;
+- `train_railtwin.py` imported `datasets.RailTwin_static` (`RailTwinStatic`, probably the ECPPM 2022 dataset
+  with a hard-coded cloud list), which is not in the repository; it now uses `datasets.railtwin.RailTwinDataset`.
+  (`utils/predictor.py` used to import `S3DISCollate` from the missing `datasets.RailTwin_priming`;
   it now uses `RailTwinCollate`.)
 - The default dataset paths in the RailTwin configs are absolute paths inside the Docker container.
 - `utils/ply.py` reads the PLY `offset` element but does not apply it to the points.
