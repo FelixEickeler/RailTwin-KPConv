@@ -77,7 +77,7 @@ Cache folder `dataset_work_dir/input_<dl>/`: `<cloud>.ply` (subsampled; mapped i
 ## railtwin_common/ (git submodule, own repo FelixEickeler/RailTwin-Common, shared by other projects)
 
 - Package root = repo root (`pyproject.toml` `package-dir {"railtwin_common" = "."}`); import `railtwin_common.common...`. Extras `algorithms`, `plot`, `test`.
-- IO: `common.io.read(path|str)`, `write(path, df, options)`, `scandir_supported`. Readers ply/las/laz (laspy, formats 0–5, world coords → local + offset)/feather; writers ply/feather never mutate caller df. `IOOptions.do_nothing()` keeps float64 coords. Offset = `attrs["metadata"]["offset"]` structured `[(x,y,z)]` shape (1,) via `header.as_offset`. `attrs["category_mapping"]`.
+- IO: `common.io.read(path|str)`, `write(path, df, options)`, `scandir_supported`. Readers ply/las/laz (laspy, formats 0–5, world coords → local + offset)/feather; writers ply/feather never mutate caller df; both apply IOOptions coords (local/shift/dtype; `write()` default = local float32 + offset). `IOOptions.do_nothing()` keeps float64 coords. Offset = `attrs["metadata"]["offset"]` structured `[(x,y,z)]` shape (1,) via `header.as_offset`. `attrs["category_mapping"]`.
 - `labels`: `LabelMapping.load("obm_mapping.json")` levels `component`/`system`/custom (`"levels"` in JSON), `remap(ids, level)`, `component_id(name, "synthetic"|"physical")`; `LabelChain.load([[file, level], ...])` steps linked by class name. `labels/obm_mapping.json` 64 components (from RailTwin-Virtualizer ecppm2022_simple).
 - `algorithms`: `QuadIndex` (2D grid index), PCA, minimal distance; `common.logger.RailTwinLogger` (python logging "RT-Logger").
 
